@@ -10,6 +10,14 @@ The goal of this repository is to create a comprehensive collection of learning 
 - HIVE
 - SPARK
 
+项目+kimball建模
+MapReduce原理
+Hadoop原理
+HIVE+SQL笔试题
+Spark
+Java基础  Linux基础
+数据库
+
 ## Content catalogue
 - java fundamentation
 - DATAWAREHOUSE

@@ -1,7 +1,3 @@
-数仓模型
-数据仓库的原理作为数仓开发工程师的核心技能，绝对是我们的高频问题，基本99%的面试官都会提问到相关的问题。完整的数仓架构需要了解。建模理论（星型建模、ER 建模）需要了解。推荐看阿里的《大数据之路》
-其中最重要的是，对数据仓库的理解、数仓分层、为什么这么设计、维度建模
-
 ## 数据仓库是什么
 
 目的：面向分析和决策
@@ -13,6 +9,10 @@
 - 集合性：数据来自多个数据源，需要整合与清洗
 - 大数据量：数据仓库存储的数据量大，需要支持大量数据分析
 - 面向主题：数据围绕业务主题，把与主题相关的数据整合起来形成一个整体。
+
+## 数仓架构
+
+![img](https://img-blog.csdnimg.cn/20210620224514571.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L1l1YW5fQ1NERg==,size_16,color_FFFFFF,t_70)
 
 ## 数仓建模
 
@@ -227,6 +227,8 @@
 
 ## 数据治理
 
+## 数仓发展趋势
+
 ## SQL开窗函数和执行顺序
 
 - 聚合函数：sum() ,avg(),max(),min()
@@ -388,7 +390,7 @@ from
        table
    group by uid ,substr(datetime,0,10)
 ）a
-   left join 
+left join 
    (
    select uid
       ,substr(datetime,0,10) as date
@@ -448,3 +450,8 @@ select username, collect_list(video_name)[0]
 from 表名
 group by username;
 ```
+
+
+
+
+

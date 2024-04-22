@@ -64,17 +64,17 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 2. Map
 
    ```
-   map分别计算 key，value的list
+   map处理每一行的内容，分别计算 key，value的list
    ```
 
-   优化：combiner 合并每个map task的重复key值
+   （溢写之前）优化：combiner 合并每个map task的重复key值
 
 3. shuffing
 
    ```
    1、MapTask收集map（）方法输出的<k,v>list，放入环形缓冲区（默认大小100M）.
    2、环形缓冲区到达一定阈值（80%），数据就会溢出到本地磁盘文件，多个溢写形成大文件。
-   3、合并过程中，分区算法（HASH算法）和对key进行快速排序
+   3溢写之前(分区+快排)：合并过程中，分区算法（HASH算法）和对key进行快速排序
    （在map阶段环形缓冲区的数据写入到磁盘的时候会根据reducetask的数量生成对应的分区，然后根据对应数据的哈希对分区数取模写入，然后会根据key值对分区中的数据使用快速排序算法进行排序，所以每个分区内的数据是有序的）
    4、合成大文件后，map端shuffle的过程也就结束了，后面进入reduce端shuffle的过程。
    5、Reduce会拉取同一个分区内的各个MapTask结果放在内存，放不下就溢写到磁盘
@@ -180,10 +180,9 @@ SELECT get_json_object('{"a":{"b":1}}', '$.a.b') AS value;
 ```
 SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 -- 输出: Alice, 30
-
 ```
 
-### Hive有哪些方式保存元数据，各有哪些特点
+### Hive元数据管理
 
 ### 数据倾斜
 
@@ -193,6 +192,8 @@ SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 2. 业务数据本身分布不均
 3. 建表时考虑不周
 4. 某些SQL语句倾斜
+
+**定位：** 任务执行过程中 卡在99%
 
 **解决方法：**
 
@@ -278,3 +279,69 @@ https://juejin.cn/post/7011365385098231816
 https://cloud.tencent.com/developer/article/1431491
 
 https://zhuanlan.zhihu.com/p/482548135
+
+
+
+
+
+MR JOIN
+
+```
+public class Job_JoinDriver {
+  	// mapper
+    static class Job_JoinMapper extends Mapper<LongWritable, Text, Text, Text> {
+        Text k = new Text();
+        Text v = new Text();
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            // 通过切片获取到当前读取文件的文件名
+            InputSplit inputSplit = context.getInputSplit();
+            FileSplit fileSplit = (FileSplit) inputSplit;
+            String path = fileSplit.getPath().getName();
+            // 定义 sid 用于存放获取的 学生ID
+            String sid;
+            String[] split = value.toString().split("\\s+");
+            // 判断文件名
+            if (path.startsWith("student")) {
+                // 学生表的 ID 在第一位
+                sid = split[0];
+                // 将整条数据作为 vlaue，并添加 Stu 的标识
+                v.set("Stu" + value);
+            } else {
+                // 成绩表的 ID 在第二位
+                sid = split[1];
+                // 将整条数据作为 vlaue，并添加 Sco 的标识
+                v.set("Sco" + value);
+            }
+            k.set(sid);
+            context.write(k, v);
+        }
+    }
+	// reducer
+    static class Job_JoinReducer extends Reducer<Text, Text, Text, Text> {
+        @Override
+        protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            // 用于存放获取到的学生信息
+            String stuContext = "";
+            // 用于存放学生的各科成绩
+            LinkedList<String> scoContext = new LinkedList<>();
+            for (Text value : values) {
+                String res = value.toString();
+                // 根据添加的标识，来区分学生信息和成绩
+                if (res.startsWith("Stu")){
+                    stuContext = res.substring(3);
+                } else {
+                    scoContext.add(res.substring(3));
+                }
+            }
+            for (String score : scoContext) {
+                // 将学生成绩与学生信息拼接
+                Text v = new Text(stuContext + "  " + score);
+                context.write(key, v);
+            }
+        }
+    }
+}
+
+```
+

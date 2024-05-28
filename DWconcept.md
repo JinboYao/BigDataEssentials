@@ -10,9 +10,17 @@
 - 大数据量：数据仓库存储的数据量大，需要支持大量数据分析
 - 面向主题：数据围绕业务主题，把与主题相关的数据整合起来形成一个整体。
 
-## 数仓架构
+## 离线数仓架构
 
-![img](https://img-blog.csdnimg.cn/20210620224514571.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L1l1YW5fQ1NERg==,size_16,color_FFFFFF,t_70)
+![img](https://uploadfiles.nowcoder.com/files/20231026/261038666_1698323104392/.jpg)
+
+数据源层：包含接入的原始数据，包括客户端日志、服务端日志、业务库、集团数据、外部数据等。
+
+数据加工层：使用 Spark、Hive 构建离线数仓、使用 Storm、 Flink 实时数仓。在数仓之上针对服务对象建设各种数据集市，比如：面向总部使用的总部数据集市面向行为数据的流量数据集市面向线下城市团队的城市团队集市面向广告的广告集市面向算法的算法特征
+
+数据服务层：主要包括存储介质的使用和数据服务的方式。存储：主要使用开源组件，如 Mysql, HDFS, HBase, Kylin, Doris, Druid, ES, Tair 等数据服务：对外数据查询、接口以及报表服务
+
+数据应用层：主要包括主题报表、自助取数工具、增值产品、数据分析等支撑业务开展，同时依赖公司平台提供的一些工具建设整体数据应用。
 
 ## 数仓建模
 

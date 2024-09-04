@@ -192,7 +192,6 @@
 
 **粒度：**数据细节级别或者汇总级别
 
-
 区别：
 
 **维度和度量**
@@ -202,7 +201,6 @@
 **指标和度量**
 
 在数据仓库中，指标通常是基于维度进行计算的度量，如计算在特定时间或地点的销售总额（指标）。
-
 
 总结：
 
@@ -511,7 +509,6 @@ from table
 SELECT id, key, value
 FROM example_data
 LATERAL VIEW EXPLODE(attributes) t AS key, value;
-
 
 ```sql
 select tf1.*, tf2.*

@@ -107,6 +107,15 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 3. 编译器：根据元数据信息生成查询计划。提交给YARN分配资源
 4. Hadoop执行生成的任务，计算HDFS的数据，结果写回HDFS
 
+### HIVE编译原理
+
+1. 词法、语法解析：Antlr 定义 SQL 的语法规则，完成 SQL 词法，语法解析，将 SQL 转化为抽象语法树 AST Tree；
+2. 语义解析：遍历 AST Tree，抽象出查询的基本组成单元 QueryBlock；
+3. 生成逻辑执行计划：遍历 QueryBlock，翻译为执行操作树 OperatorTree；
+4. 优化逻辑执行计划：逻辑层优化器进行 OperatorTree 变换，合并 Operator，达到减少 MapReduce Job，减少数据传输及 shuffle 数据量；
+5. 生成物理执行计划：遍历 OperatorTree，翻译为 MapReduce 任务；
+6. 优化物理执行计划：物理层优化器进行 MapReduce 任务的变换，生成最终的执行计划
+
 ### UDF、UDAF、UDTF的区别
 
 UDF 对单个输入值返回单个结果
@@ -120,7 +129,36 @@ SELECT product_id, explode(features) as feature
 FROM products;
 ```
 
+### HIVE group by的MR实现
+
+**MAP 执行映射操作** ：在映射操作中，每一行数据都会被处理。处理过程中，Hive会根据 `GROUP BY`语句中的字段计算每行的键值对。键是 `GROUP BY`的字段值，值通常是整行数据或者是需要进行聚合的字段。
+
+**Shuffle 分区与排序** ：在Map阶段输出的数据会根据键（即 `GROUP BY`的字段）被分配到不同的Reducer。这个过程中数据也会被排序或者进行哈希分区，确保同一个键的所有数据都被发送到同一个Reducer。
+
+**Reduce **数据聚合** ：**Reducer接收到所有映射到相同键的数据后，开始执行聚合操作。这包括但不限于计算平均值、求和、计数、最大值和最小值等。
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/3cacabf4336e0c9004822dfa02991da4.png)
+
+### HIVE distinct的MR实现
+
+MAP
+
+* **键值对生成** ：在这个阶段，Map任务对每一行数据生成键值对。对于 `DISTINCT`查询，整行数据或指定的字段（取决于查询的具体语法，如 `SELECT DISTINCT column1, column2 FROM table;`）会被用作键，而值通常是一个空记录或者某个可以忽略的常量。
+* **局部去重** ：Map阶段可以选择性地进行一个局部聚合过程（Combine过程），这里会将具有相同键的记录去重，只保留一份，以减少后续阶段的数据量和处理压力。
+
+Shuffle
+
+Reduce
+
+* **全局去重** ：尽管局部去重已在Map阶段进行，但最终的去重发生在Reduce阶段。Reducer接收到分组好的键值对后，每个组只需要输出一次键值对（因为相同键的所有值已经在Shuffle阶段被聚集到一起）。
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/cbdfe1d159f2639b874b6c3d1d968669.png)
+
 ### HIVE join的MR实现
+
+map：map阶段的value包括tag，可能是表名称
+
+reduce：根据key值完成join操作，通过tag值识别不同表数据
 
 ![img](https://imgconvert.csdnimg.cn/aHR0cDovL2ltZy5seHcxMjM0LmNvbS8wNjI1LTEuanBn?x-oss-process=image/format,png#pic_center)
 
@@ -153,7 +191,7 @@ FROM products;
 * **缺点：** 不支持列式存储，随机读写性能较差。
 * **适用场景** ：需要进行快速序列化和反序列化的场景。
 
-**RCFile（Row Columnar File）** 
+**RCFile（Row Columnar File）**
 
 - **描述** ：将数据按行进行分块存储，每个块内部再按列存储。
 - **优点** ：列式存储，支持压缩，能够加速某些只查询部分列的操作。

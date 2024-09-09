@@ -101,7 +101,6 @@ Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血
 
 **窄依赖：** 父RDD每个分区被子RDD的一个分区使用
 
-![f5-rdd-narrow-and-wide-dependencies.png](https://img2.imgtp.com/2024/05/10/Vsp2nHCX.png)
 
 ## spark的持久化&缓存机制
 

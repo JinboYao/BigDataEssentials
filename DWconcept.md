@@ -243,6 +243,40 @@
 
 **验证与迭代** ：通过与业务用户的反馈迭代优化数据模型。
 
+## 怎么保证数据质量
+
+1. **模型建设**
+
+* **确保高内聚低耦合**
+
+```
+（1）将业务相近或者相关、粒度相同的数据设计为一个逻辑或者物理模型
+（2）将高概率同时访问的数据放在一起，将低概率同时访问的数据分开存储。
+```
+
+* **提高模型的复用性和扩展性** ：构建可重用的数据模型以应对多变的业务需求，同时保证模型容易扩展，能够适应数据量的增长和新的数据类型。
+* **监控模型的稳定性** ：定期检查是否存在数据倾斜或运行时间异常，确保数据处理和查询性能稳定。
+
+2. **数据成本与性能管理**
+
+* **有效管理数据生命周期** ：通过设定数据的存储周期和访问频率，管理数据的存储成本和性能。
+* **优化数据倾斜** ：通过合理的数据分区和负载均衡策略，减少数据倾斜问题，提高查询和处理的效率。
+* **控制数据冗余和复制** ：确保数据冗余和复制的策略既能满足性能需求，又不会造成过度的成本负担。
+
+3. **模型数据质量**
+
+* **确保一致性** ：对于存储在不同表中的相同数据，通过定期的数据质量检查，确保没有差异。
+* **完整性验证** ：检查数据集是否完整，确保所有必需的数据项都被正确采集和存储。
+* **保持数据准确性** ：通过数据校验、清洗和修正流程，确保数据的准确性。
+* **维护数据唯一性** ：通过唯一性校验，确保数据表中没有重复的记录，避免错误的数据汇总。
+* **提高数据及时性** ：通过优化数据处理流程，确保数据可以及时更新，满足业务需求的实时性或近实时性。
+* **规范数据管理** ：统一数据命名和格式规范，确保各个系统和数据表之间的一致性，便于管理和使用。
+
+4. **持续监控和改进**
+
+* **建立数据质量监控（DQC）** ：监控关键数据质量指标，如一致性、完整性、及时性等。
+* **定期审查和优化** ：根据数据质量监控结果，不断调整数据处理流程和数据模型，以适应新的业务需求和技术发展。
+
 ## 怎么判断一个数仓的质量
 
 1. 模型建设方面：
@@ -263,7 +297,7 @@
 
    表的生命周期管理；数据倾斜任务；运行时长管理
 
-   适当的数据冗余可换取查询和刷新性能，不宜过度冗余与数据复制
+   适当的数据冗余可换取查询和刷新性能，不宜过度冗余与数据复制、
 3. 模型数据质量：
 
    `一致性`：相同数据在不同数据表中是否有gap
@@ -291,24 +325,28 @@
 ## 开窗函数
 
 - 聚合函数：sum() ,avg(),max(),min()
+
+  ```sql
+  SELECT SUM(Sales) OVER (ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS Cumulative_Sales FROM sales_data;
+  ```
 - 排名函数：row_number(),rank(),dense_rank()
 
-  ````
+  ````sql
   100,200,200,300
-  rn  1,2,3,4
+  rn   1,2,3,4
   rank 1,2,2,4
-  dr 1,2,2,3
+  dr   1,2,2,3         SELECT  DENSE_RANK() OVER (ORDER BY Score DESC) AS Rank  FROM student_scores;(从大到小)
   ````
 - 分析函数：lead(),lag(),FIRST_VALUE(),LAST_VALUE()
 
   ```sql
-  lead() 查看下一行数据
-  lag()  查看上一行数据
-  FIRST_VALUE() 查看第一行数据
-  LAST_VALUE() 查看最后一行数据
+  lead(参数)            查看下一行数据      SELECT lead(name) OVER (ORDER BY id) FROM employees;
+  lag(参数)             查看上一行数据      SELECT lag(name) OVER (ORDER BY id) FROM employees;
+  FIRST_VALUE(参数)     查看第一行数据      SELECT FIRST_VALUE(name) OVER (ORDER BY hire_date) FROM employees;
+  LAST_VALUE(参数)      查看最后一行数据    SELECT LAST_VALUE(name) OVER (ORDER BY hire_date ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM employees;（必须要指定rows）
   ```
 
-语法：
+**语法：**
 
 ```sql
 SELECT ROW_NUMBER(COLUMN) OVER(
@@ -322,11 +360,32 @@ WHERE CONDITION
 
 `PARTITION BY` 用于定义窗口内数据分组的依据
 
-`ORDER BY` 用于数据排序
+`ORDER BY` 用于数据排序（**ASC `默认`：**由小到大  **DESC**:由大到小 ）
 
 `ROWS|RANGE` 定义了窗口的前后范围
 
-执行顺序：
+rows&range：
+
+```sql
+1、完整分区窗口
+ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING: 包括整个分区的所有行
+
+2、到当前分区末尾的窗口
+ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING: 从当前行到分区的最后一行。
+
+3、动态调整窗口
+ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING: 包括当前行、前两行和后两行，总共五行，适用于需要考虑邻近数据的情况，如移动平均等。
+
+4、固定行数的窗口
+ROWS BETWEEN 1 PRECEDING AND CURRENT ROW: 这个窗口包括当前行和它之前的一行，用于计算这两行的数据。
+ROWS BETWEEN 3 PRECEDING AND 1 FOLLOWING: 包括当前行、前面三行和后面一行，合计五行数据。
+
+5、固定距离的窗口（基于逻辑值如日期）
+RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW: 对于日期字段，这个窗口包括从当前日期向前数一天内的所有行。
+RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND INTERVAL 1 HOUR FOLLOWING: 包括从当前时间前后各一小时内的所有行。
+```
+
+**SQL执行顺序：**
 
 - FROM
 - JOIN

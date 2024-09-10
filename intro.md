@@ -1,10 +1,14 @@
 ### 自我介绍
 
-你好，我叫姚金波，本科毕业于湖南中医药大学计算机专业，本科期间，在百度实习，担任py开发，做了一个性能测试平台内部系统。研究生在马来亚大学读人工智能专业。在北大信研院做生物信息开发。之前有一段知乎数仓开发的工作经验。主要负责教育的数仓建设，做HIVE离线开发，主要做了教务体系开发和全链路宽表的建设，以及参与了知乎数据治理的项目。我在25年3月毕业，现在在找数据开发的实习。
+你好，我叫姚金波，本科毕业于湖南中医药大学计算机专业。本科期间，在百度实习4个月，担任py开发，做了一个性能测试平台内部系统，检测脚本运行的内存/cpu占用率，指标计算和报警。
+
+毕业之后加入知乎，担任数仓开发工程师。主要负责教育的数仓的离线开发，主要做了教务体系数据仓库从0-1的开发和教育全链路大宽表的建设，以及参与了知乎数据治理的项目。
+
+2023年10月之后，在马来亚大学读人工智能专业硕士。2024年6月在蚂蚁实习，担任数据开发，负责印尼、马来西亚等东南亚的业务。
+
+我在25年5月毕业，现在在找数据开发的工作。
 
 Good evening, my name is jinbo yao.I am a student of Univeristi Malaya majoring in Artifical inteligence. In my undergraduate,I have an internship in Baidu. In my postgraduate, I was the biology AR in Peking univerisity advanced information institution. I used to work as big data Engineer. I was reseponable for  education system construction and education full-link data table construciton. I will graduate in March,2025.I am looking for a position of data engineer.Thanks for your listening
-
-
 
 ### 自己的优缺点/性格
 
@@ -94,4 +98,3 @@ She is very capable, not only in terms of technical skills but also in terms of 
 2、How long will I to get results?
 3、I would like to know the pattern of interns, such as study plans, conversion rate to full-time positions.
 ```
-

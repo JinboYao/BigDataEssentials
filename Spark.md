@@ -26,14 +26,23 @@ Spark和MR都是基于MR并行计算
 主从架构，一个Master(Driver)和若干woker
 
 <<<<<<< HEAD
+
 - Driver：资源申请，任务分配，SparkContext主导应用执行
 - Cluster Manager ：节点管理器，把算子RDD发送给Worker Node
 - Executor：一个JVM进程，用于计算，接任务Task
-=======
+  ===========================================
 - Driver：资源申请，任务分配
 - Cluster Manager
 - Executor：一个JVM进程，用于计算
+
 >>>>>>> 73683d5a821b472b1fc3f0c02c6860a6f3b8a950
+>>>>>>>
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>
+
 - HDFS,HBASE：存储数据
 
 #### Spark 核心组件
@@ -57,9 +66,9 @@ Spark和MR都是基于MR并行计算
 
 ## Spark工作流程
 
-- 客户端提交任务，创建`Driver`进程并且初始化SparkContext
+- 客户端提交任务，创建 `Driver`进程并且初始化SparkContext
 - `SparkContent`向 `Cluster Manager`申请资源
--  `Cluster Manager`选择合适的`Worker`节点创建executor进程
+- `Cluster Manager`选择合适的 `Worker`节点创建executor进程
 - `executor`向Driver 端注册，并且等待分配task任务
 - SparkContent 构建DAG图，划分stage并且分配task给Executor
 - Executor启动task线程执行具体任务
@@ -107,11 +116,10 @@ Resilient Distributed Datasets(弹性分布式数据集合) 是分布式内存�
 
 特性：
 
-<<<<<<< HEAD
 - RDD有一组分片，即数据集的基本组成单位。
 - 每个分片都会被一个计算任务处理，并且决定并行计算的粒度
 - RDD直接存储依赖关系
-=======
+
 ```
 A list of partitions
 A function for computing each split 
@@ -119,7 +127,6 @@ A list of dependencies on other RDDs
 Optionally, a Partitioner for key-value RDDs (e.g. to say that the RDD is hash-partitioned) 
 Optionally, a list of preferred locations to compute each split on (e.g. block locations for an HDFS file)
 ```
->>>>>>> 73683d5a821b472b1fc3f0c02c6860a6f3b8a950
 
 ## Spark宽窄依赖&血缘
 
@@ -135,25 +142,17 @@ Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血
 
 **宽依赖：** 父RDD每个分区被多个子RDD分区使用
 
-<<<<<<< HEAD
 ![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171657817-1513169131.png)
 
-**窄依赖：**父RDD每个分区被子RDD的一个分区使用
-=======
 **窄依赖：** 父RDD每个分区被子RDD的一个分区使用
->>>>>>> 73683d5a821b472b1fc3f0c02c6860a6f3b8a950
 
 窄依赖允许子RDD的每个分区可以被并行处理，而且支持在一个节点上链式执行多条指令，无需等待其他父RDD的分区操作
 
-<<<<<<< HEAD
 ![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171650540-1125656506.png)
 
 ## wordcount
 
-![wc执行流程图](https://p1-jj.byteimg.com/tos-cn-i-t2oaga2asx/gold-user-assets/2019/4/20/16a3898802df75c3~tplv-t2oaga2asx-jj-mark:3024:0:0:0:q75.png)
-=======
 ## spark的持久化&缓存机制
->>>>>>> 73683d5a821b472b1fc3f0c02c6860a6f3b8a950
 
 ## Sprak和MR的Shuffle的区别
 
@@ -161,9 +160,11 @@ Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血
 
 ## spark的持久化&缓存机制
 
-## 用Spark遇到了哪些问题
-
 ## Spark join的有几种实现
+
+## spark加载大数据量会不会失败
+
+## 用Spark遇到了哪些问题
 
 ## 背压机制应用场景 底层实现
 

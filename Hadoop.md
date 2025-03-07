@@ -2,11 +2,123 @@ https://juejin.cn/post/7011365385098231816
 
 # Hadoop基础
 
+### Hadoop的运行模式
+
+1. 单机版：不需要配置`hdfs-site.xml`或`mapred-site.xml`文件，因为Hadoop默认在本地文件系统而非HDFS上操作。
+2. 伪分布模式： 所有的Hadoop进程以独立的java进程形式存在，类似于完全的分布式环境。（如 NameNode、DataNode、ResourceManager、NodeManager 等）
+3. 完全分布模式：hadoop 运行在多台机器组成的集群上面。
+
+### Hadoop集群中启动的进程
+
+1. NameNode：hadoop中的主服务器，管理文件系统名称空间和对集群中存储的文件的访问，保存有metadate
+2. SecondaryNameNode：提供周期检查点和清理任务。帮助NN合并editslog，减少NN启动时间。
+3. DataNode：管理连接到节点的存储（一个集群中可以有多个节点）。每个存储数据的节点运行一个datanode守护进程。
+4. ResourceManagerr（JobTracker）：JobTracker负责调度DataNode上的工作。每个DataNode有一个TaskTracker，它们执行实际工作。
+5. NodeManager（TaskTracker）：执行任务
+6. DFSZKFailoverController
+7. JournalNode
+
+### Hadoop序列化和反序列化
+
+- 序列化：将对象序列化为字节流，以便通过网络传输或存储到 HDFS。
+
+- 反序列化：将字节流转换回对象，以便在计算过程中使用。例如**MapReduce**分布式计算
+
+Hadoop 使用 `Writable` 接口作为其序列化框架的核心。
+
+`Writable` 接口定义了两个核心方法：
+
+- `void write(DataOutput out)`：将对象的字段写入字节流。
+- `void readFields(DataInput in)`：从字节流中读取字段并赋值给对象。
+
+### map和reduce的数量
+
+1. map数量：数据切分成的block块数量决定
+
+   ```
+   如果需要调整分片大小，可以通过以下参数：
+   
+   mapreduce.input.fileinputformat.split.maxsize：设置最大分片大小。
+   
+   mapreduce.input.fileinputformat.split.minsize：设置最小分片大小。
+   ```
+
+2. reduce 数量：Reduce任务的数量。job.setNumReduceTasks(int)设置，默认为1
+
+3. mapTask数量：一个job的map阶段MapTask并行度（个数），由客户端提交job时的切片个数决定
+
+4. reduceTask 数量：实际运行的 Reduce 任务的数量。如果集群资源不足，ReduceTask 可能会分批运行。（如果 Reduce 数量为 4，但集群只能同时运行 2 个 ReduceTask，则 ReduceTask 会分两批运行）
+
+### ☆MapReduce跑得慢的原因
+
+Mapreduce 程序效率的瓶颈在于两点：
+1）计算机性能
+  CPU、内存、磁盘健康、网络
+2）I/O 操作优化
+  （1）数据倾斜
+  （2）map和reduce数设置不合理
+  （3）reduce等待过久
+  （4）小文件过多
+  （5）大量的不可分块的超大文件
+  （6）spill次数过多
+  （7）merge次数过多等
+
+### ☆MapReduce优化方法
+
+**数据输入**
+
+1. 合并小文件 ：执行mr任务前小文件合并
+
+2. 采用combinFileInputFormat来作为输入，解决输入端大量小文件场景
+
+**map阶段**
+
+1. 减少spill次数：增大触发spill的内存上限，减少spill次数，从而减少磁盘 IO
+2. 减少merge次数：增大merge的文件数目，减少merge参数，缩短mr处理时间
+3. 在map之后先进行combine处理，减少IO
+
+**reduce阶段**
+
+（1）合理设置map和reduce数
+
+（2）设置map、reduce共存：
+
+**IO传输**
+
+（1）采用数据压缩的方式，减少网络IO的时间。安装Snappy和LZOP压缩编码器。
+（2）使用SequenceFile二进制文件
+
+**数据倾斜问题**
+
+收集倾斜数据： 在reduce方法中加入记录map输出键的详细情况的功能。
+
+（1）抽样和范围分区：可以通过对原始数据进行抽样得到的结果集来预设分区边界值。
+
+（2）自定义分区：另一个抽样和范围分区的替代方案是基于输出键的背景知识进行自定义分区。例如，如果map输出键的单词来源于一本书。其中大部分必然是省略词（stopword）。那么就可以将自定义分区将这部分省略词发送给固定的一部分reduce实例。而将其他的都发送
+
+（3）Combine：使用Combine可以大量地减小数据频率倾斜和数据大小倾斜。给剩余的reduce实例。
+
+### ☆HDFS小文件优化方法
+
+**HDFS小文件弊端**
+
+HDFS上每个文件都要在NameNode上建立一个索引，索引大小大约150byte.当小文件多的时候，就会产生很多的索引文件，一方面会大量占用namenode的内存空间，另一方面就是索引文件过大是的索引速度变慢
+
+**解决方案**
+
+（1）Hadoop Archive
+    是一个高效地将小文件放入HDFS块中的文件存档工具，它能够将多个小文件打包成一个HAR文件，这样在减少namenode内存使用的同时。
+（2）Sequence file
+    sequence file由一系列的二进制key/value组成，如果为key小文件名，value为文件内容，则可以将大批小文件合并成一个大文件。（3）CombineFileInputFormat
+    CombineFileInputFormat是一种新的inputformat，用于将多个文件合并成一个单独的split，另外，它会考虑数据的存储位置
+
 ## HDFS(分布式文件存储系统)
 
 ### HDFS架构
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20210228145111743.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDMxODgzMA==,size_16,color_FFFFFF,t_70)
+
+![在这里插入图片描述](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/7614738a4ec5464eabc8535b244df28a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
 HDFS是主从架构
 
@@ -38,6 +150,30 @@ HDFS是主从架构
 2、客户端根据元数据信息根据网络拓扑原理和就近原则，发送读请求给datanode
 3、datanode收到读请求后，通过HDFS的FSinoutstream将数据读取到本地，然后进行下一个数据块的读取，知道文件的所有block读取完成。
 
+### Secondary NN 工作机制
+
+**NN启动**
+
+客户端对元数据有增删改操作
+
+NN记录操作日志，更新滚动日志
+
+NN在内存中对数据进行增删改
+
+**SNN 工作**
+
+SNN请求执行Checkpoint
+
+NN滚动正在写的edit日志
+
+拷贝日志和镜像文件道SNN
+
+SNN 把日志和镜像文件放入内存进行合并
+
+生产新的镜像文件fsimage.checkpoint
+
+拷贝fsimage.checkpoint到NN，NN重新命名为fsimage
+
 ### 文件管理的容错机制
 
 HDFS写入时，把文件分隔成block，每个block的3个副本存储在三个集群机器上。
@@ -48,11 +184,13 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 ■ 第三副本：与第二个副本相同机架的不同节点上。
 ```
 
+### HDFS的数据压缩算法
+
+**bzip2、gzip、lzo、snappy**
+
 ## MapReduce(分布式计算架构)
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20201210185505552.jpg?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L01heV9KX09sZGh1,size_16,color_FFFFFF,t_70#pic_center#pic_center)
-
-![1713443818276.png](https://img2.imgtp.com/2024/04/18/cjmeVp92.png)
 
 1. split 输入分片
 
@@ -80,17 +218,45 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
    ```
 4. reduce
 
-   reduce从合并的文件中取出一个一个的键值对group，调用用户自定义的reduce方法（），生成最终的输出文件。完成后output到HDFS中
+   reduce从合并的文件中取出一个一个的键值对group，调用定义的reduce方法（），生成最终的输出文件。完成后output到HDFS中
 
 ### MapReduce两次排序
 
 第一次在Map从环形缓冲区写入磁盘时，会根据Reduce的数量进行分区，然后根据数据的Hash取模写入。之后根据快排进行排序，数据有序
 
-第二次是reduce阶段，reduceTask去Maptask节点上对应分区拉取数据，采用归并排序对拉取的key值排序。
+第二次是reduce阶段，reduceTask去多个Maptask节点上对应分区拉取数据，采用归并排序对拉取的key值排序。
 
 ### MapReduce中的Combine是干嘛的?有什么好外?
 
-对MapTask的输出做一个重复key值的合并操作（{key，[V1,V2]}）,减少网络传输。
+对MapTask的输出做一个重复key值的合并操作（{key，[V1,V2]}）,局部汇总减少网络传输。
+
+### MapReduce 2.0容错
+
+1）MRAppMaster容错性
+  一旦运行失败，由YARN的ResourceManager负责重新启动，最多重启次数可由用户设置，默认是2次。一旦超过最高重启次数，则作业运行失败。
+2）Map Task/Reduce Task 
+
+   Task周期性向MRAppMaster汇报心跳；一旦Task挂掉，则MRAppMaster将为之重新申请资源，并运行之。最多重新运行次数可由用户设置，默认4次。
+
+## YARN
+
+### Hadoop中的主要调度器
+
+1. **FIFO调度器（First In First Out Scheduler）**
+
+   按照作业提交的顺序来调度作业，适用于作业大小相对一致且不需要多级队列或优先级调度的简单环境。
+
+2. 容量调度器
+
+   可以将集群的容量分割成多个队列，每个队列有一定的容量保证。
+
+   适合多部门或多项目共享集群资源的场景，可以保证资源按需公平分配。
+
+3. 公平调度器
+
+   以公平的方式分配资源，确保所有运行的作业获得相等的资源
+
+   适合需要高度公平性，保证无作业饥饿的环境
 
 ## HIVE
 
@@ -109,10 +275,10 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 
 ### HIVE编译原理
 
-1. 词法、语法解析：Antlr 定义 SQL 的语法规则，完成 SQL 词法，语法解析，将 SQL 转化为抽象语法树 AST Tree；
+1. 词法、语法解析：根据SQL 的语法规则，完成 SQL 词法，语法解析，将 SQL 转化为抽象语法树 AST Tree；
 2. 语义解析：遍历 AST Tree，抽象出查询的基本组成单元 QueryBlock；
 3. 生成逻辑执行计划：遍历 QueryBlock，翻译为执行操作树 OperatorTree；
-4. 优化逻辑执行计划：逻辑层优化器进行 OperatorTree 变换，合并 Operator，达到减少 MapReduce Job，减少数据传输及 shuffle 数据量；
+4. 优化逻辑执行计划：逻辑层`优化器`进行 OperatorTree 变换，合并 Operator，达到减少 MapReduce Job，减少数据传输及 shuffle 数据量；
 5. 生成物理执行计划：遍历 OperatorTree，翻译为 MapReduce 任务；
 6. 优化物理执行计划：物理层优化器进行 MapReduce 任务的变换，生成最终的执行计划
 
@@ -135,7 +301,7 @@ FROM products;
 
 **Shuffle 分区与排序** ：在Map阶段输出的数据会根据键（即 `GROUP BY`的字段）被分配到不同的Reducer。这个过程中数据也会被排序或者进行哈希分区，确保同一个键的所有数据都被发送到同一个Reducer。
 
-**Reduce **数据聚合** ：**Reducer接收到所有映射到相同键的数据后，开始执行聚合操作。这包括但不限于计算平均值、求和、计数、最大值和最小值等。
+**Reduce **数据聚合：Reducer接收到所有映射到相同键的数据后，开始执行聚合操作。这包括但不限于计算平均值、求和、计数、最大值和最小值等。
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/3cacabf4336e0c9004822dfa02991da4.png)
 
@@ -156,7 +322,7 @@ Reduce
 
 ### HIVE join的MR实现
 
-map：map阶段的value包括tag，可能是表名称
+map：map阶段的value包括tag，可能是表名称。<表tag，表数据>
 
 reduce：根据key值完成join操作，通过tag值识别不同表数据
 
@@ -165,6 +331,8 @@ reduce：根据key值完成join操作，通过tag值识别不同表数据
 **一张表为小表** map join 进行聚合
 
 **都为大表** 将join on公共字段相同的数据划分到同一个分区->传递到同一个reduce，实现聚合
+
+
 
 ### 分区表、分桶表、内部表、外部表
 
@@ -238,7 +406,6 @@ collect_list（）将一组值合并成一个数组
 ```
 SELECT get_json_object('{"a":{"b":1}}', '$.a.b') AS value;
 -- 输出: "1"
-
 ```
 
 **json_tuple**
@@ -250,9 +417,13 @@ SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 -- 输出: Alice, 30
 ```
 
-### Hive元数据管理
+### Fetch抓取和本地模式
 
-### 数据倾斜
+- Fetch抓取是指，Hive中对某些情况的查询可以不必使用MapReduce计算。例如：SELECT * FROM employees;在这种情况下，Hive可以简单地读取employee对应的存储目录下的文件，然后输出查询结果到控制台。
+
+- 查询触发执行任务时消耗可能会比实际job的执行时间要多的多，Hive可以通过本地模式在单台机器上处理所有的任务。
+
+### Hive数据倾斜
 
 **原因：**
 
@@ -264,6 +435,8 @@ SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 **定位：** 任务执行过程中 卡在99%
 
 **解决方法：**
+
+**SQL语句调节**
 
 1.空值导致
 
@@ -298,18 +471,24 @@ SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 - 空值过多的情况，把空值与非空值拆分单独计算
 - 使用 sum group by替换
 
-7.参数调节
-
-```sql
-设置hive.map.aggr=true  开启map端的部分聚合供你，把key相同的聚合在一起
-设置hive.groupby.skewindata=true 负载均衡
-```
-
-8.行列过滤
+7.行列过滤
 
 ```sql
    select时使用分区过滤；join时先where过滤再关联
 ```
+
+**参数调节**
+
+```
+设置hive.map.aggr=true  开启map端的部分聚合供你，把key相同的聚合在一起
+设置hive.groupby.skewindata=true 负载均衡
+```
+
+有数据倾斜的时候进行负载均衡，当选项设定位true,生成的查询计划会有两个MR Job。
+
+第一个MR Job(分散数据)，Map的输出结果集合会随机分布到Reduce中，每个Reduce做部分聚合操作并输出结果，将倾斜的键分散到多个Reducer中，从而达到负载均衡的目的；
+
+第二个MR Job（最终聚合）再根据预处理的数据结果按照Group By Key 分布到 Reduce 中（这个过程可以保证相同的 Group By Key 被分布到同一个Reduce中），最后完成最终的聚合操作。
 
 ### HIVE 小文件调优
 

@@ -547,6 +547,23 @@ from(
 
 ### sql算法
 
+**分析聚类**
+
+已知一张表table_a记录了用户浏览信息,包含字段user_id(用户ID)和page_id(页面ID)以及对应的访问时间，例如
+user_id     page_id     view_time
+0001             A        2025-01-02 10:01:02
+0001             B          2025-01-02 11:02:03
+0002             A        2025-01-01 10:02:03
+0002             A        2025-01-01 10:02:05
+0002             C        2025-01-01 10:03:03
+0002             D        2025-01-01 10:07:03
+
+求出当天连续访问A->B->C页面的用户信息
+
+```
+lead（）获取下一行数据
+```
+
 ##### 连续N天登录的用户
 
 ```sql
@@ -570,6 +587,38 @@ from(
 group by id
  ,result_date
 having count(result_date)>=3
+```
+
+##### 最长的连续登录N天数-可间断
+
+```sql
+SELECT user_id,
+       MAX(log_days) AS max_log_days
+FROM (
+    SELECT user_id,
+           GROUP_ID,
+           DATEDIFF(MAX(login_date), MIN(login_date)) + 1 AS log_days
+    FROM (
+        SELECT user_id,
+               login_date,
+               -- 创建一个组ID，如果日期差大于2则开始一个新组
+               SUM(CASE WHEN date_diff > 2 THEN 1 ELSE 0 END) OVER (PARTITION BY user_id ORDER BY login_date) AS group_id
+        FROM (
+            SELECT user_id,
+                   login_date,
+                   -- 计算当前登录日期与上一登录日期的差
+                   DATEDIFF(login_date, LAG(login_date) OVER (PARTITION BY user_id ORDER BY login_date)) AS date_diff
+            FROM (
+                SELECT user_id,
+                       TO_DATE(login_datetime) AS login_date
+                FROM t_login_events
+                GROUP BY user_id, TO_DATE(login_datetime)
+            ) AS dates
+        ) AS date_diffs
+    ) AS grouped_dates
+    GROUP BY user_id, group_id
+) AS max_days
+GROUP BY user_id;
 ```
 
 ##### 行转列

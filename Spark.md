@@ -1,46 +1,54 @@
-## Spark vs MR
+## Spark vs MR 组件
 
 ![image.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e0c96476a819418686b9b46baf7951c7~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
-Spark和MR都是基于MR并行计算
+## Spark和MR并行计算
 
-- 计算
+- 并行计算
 
-  MR：MR的一个作业称为job，job 分为map task和reduce task。每个task在自己的进程中运行。
+  MR：MR的一个作业称为Job，Job 分为map task和reduce task。每个task在自己的进程中运行。
 
-  Spark：spark把任务成为application，一个application对应一个spark content，每触发一次action就会产生一个job。application中存在多个job，每个job有很多stage（stage是shuffle中DGASchaduler通过RDD间的依赖关系划分job而来的）每个stage里有多个task（taskset）。taskset由taskshedulaer分发到各个executor中执行。
+  Spark：Spark把任务成为application，一个application对应一个spark content，每触发一次action就会产生一个job。application中存在多个job，每个job有很多stage（stage是shuffle中DGASchaduler通过RDD间的依赖关系划分job而来的）每个stage里有多个task（taskset）。taskset由taskshedulaer分发到各个executor中执行。
   
-- 存储
+- 内存使用
 
   MR过程中重复读写HDFS，大量IO操作
 
   Spark二点迭代计算在内存中进行，API提供了大量RDD操作（join，group by），DAG图实现良好容错性
 
-### Spark 为什么比HIVE快
+## Spark SQL 为什么比 HIVE 快
 
 1. 内存和磁盘刷写
 
-   MR 在shuffle阶段，数据需要经过环形缓冲区溢写，需要按案件进行排序以便键相同的数据可以发送到同一个reduce。期间涉及大量数据传输，网络和磁盘I/O造成负担
+   **HIVE 基于磁盘，Spark SQL 使用内存计算作为核心计算机引擎**
+
+   MR的shuffle涉及大量数据传输，网络和磁盘I/O造成负担。数据需要经过环形缓冲区溢写，需要按key进行排序以便键相同的数据可以发送到同一个reduce。
 
    Spark的DAG可以减少Shuffle次数。如果计算不涉及其他节点数据交换，Spark可以在内存中一次性完成这些操作，只在最后结果落盘。如果涉及数据交换，Shuffle阶段数据还要写磁盘。(Executor 中有一个 `BlockManager`存储模块：将内存和磁盘共同作为存储设备，多轮迭代计算时，中间结果直接存储到这里。减少IO开销。)
 
 2. 进程和线程
 
-   MR基于**进程**，MR任务基于进程级别，每个任务运行在单独的进程。Mapper和Reducer任务执行过程中可能涉及多个线程处理输入数据,执行计算和IO操作
+   MR基于**进程**级别，每个任务运行在单独的进程。Mapper和Reducer任务执行过程中可能涉及多个线程处理输入数据,执行计算和IO操作
 
-   Spark基于**线程**，任务是线程级别的，由执行器（Executor）中的线程池处理。每个 Executor 可以运行多个任务，每个任务由一个或多个线程处理，共享 Executor 内的内存。
+   Spark基于**线程**级别，由执行器（Executor）中的线程池处理。每个 Executor 可以运行多个任务，每个任务由一个或多个线程处理，共享 Executor 内的内存。
+
+3. Spark Shuffle 优化
+
+   MR每次Shuffle 都需要分区快排，Spill的多个临时文件归并排序，reduce拉取map的输出后归并排序成一个文件
+
+   Spark Shuffle 基于Hash将相同的key写入同一个内存缓冲区/磁盘文件；或者预排序-批量处理-合并大文件+索引记录 ，不需要多次排序加快速度
 
 3. Spark持久化缓存机制
 
-   Spark将需要复用的数据存储在内存中，显著提高Spark运行的速度。
+   Spark将需要`复用的数据`缓存在内存中，下次再使用此RDD时直接从缓存获取，显著提高Spark运行的速度。
 
-   MR每个阶段之间都需要把数据写入分布式文件系统，多次复制移动
+   MR每个Shuffle都需要写入磁盘，增加了读写延迟
 
 4. 数据格式和序列化
 
    Spark使用数据序列化格式，例如Parquet
 
-   MR默认使用文本格式，传输和解析开销
+   MR默认使用文本格式，传输和解析开销大
 
 ## SPARK 架构
 
@@ -57,34 +65,77 @@ Spark和MR都是基于MR并行计算
 
 - HDFS,HBASE：存储数据
 
-## Spark作业提交流程
+## Applicaiton、Job、Stage、Task之间的关系
 
-1. **运行环境构建**
-   - 客户端提交Spark任务（Spark SQL通过抽象语法树解析、生成逻辑计划、 查询优化器优化、生成物理计划），**Driver创建一个Context对象，负责与Cluster Manager(资源管理器) 通信以及资源申请、任务分配和监控。**
-   - **Content向资源管理器注册申请运行Executor进程** Executor运行情况随着心跳发送到资源管理器上。SparkContext 可以看成是应用程序连接集群的通道.
-   - **RDD 创建**：在任务提交的初期，Context 会基于输入数据或已有数据集创建 RDD
-2. **资源管理器为Executor分配资源，启动Executor进程**
-   - Executor运行情况将随着心跳发送到资源管理器上。一个Executor进程又很多Task线程，Task对应RDD的操作
-   - **RDD 分区**：RDD 被分割成多个分区，并且这些分区被分配给不同的 Executor。
-3. Spark content 根据RDD 依赖关系构建DAG图
-   - DAG图交给DAG 调度器（**DAGScheduler**）进行解析。DAG调度器分解成多个阶段 `Stage`（任务集），计算出各个阶段的依赖关系。
-   - 把任务集交给底层的任务调度器（**TaskScheduler**）进行处理。Executor向Context申请任务（`Task`）
-   - **RDD 的血统信息（lineage）**：DAGScheduler 会根据 RDD 之间的依赖关系生成 RDD 的血统信息，用来追踪每个 RDD 的转换历史。这样，即使某个 Task 失败了，Spark 也能通过血统信息重新计算丢失的分区。
-4. 任务调度器（**TaskScheduler**）将任务分发给 Executor 运行，同时，SparkContext 将应用程序代码发放给 Executor。
-   - **RDD 执行过程**：当任务分配到 Executor 时，Executor 会开始执行与 RDD 相关的操作。例如，`map` 或 `filter` 等操作将在 Executor 内部针对 RDD 的分区并行执行。
-   - **数据传输与 Shuffle**：如果需要跨分区进行数据聚合（如 `reduceByKey`），Executor 会进行数据的 Shuffle 操作。
-5. 任务在Executor运行，完成后写入数据在存储然后释放所有资源.
-   - **RDD 计算**：Executor 执行任务并计算 RDD。
-   - **持久化和缓存**：如果 RDD 被持久化（`persist` 或 `cache`）或中间结果需要被复用，Executor 会将计算结果存储在内存中，避免重复计算。
-   - **完成任务后释放资源**：任务完成后，Executor 将结果写入外部存储系统（如 HDFS、S3 等）。随后，Executor 会通过心跳向资源管理器报告任务执行状态。如果没有更多任务，Executor 会释放资源。
+![Application组成](https://i-blog.csdnimg.cn/blog_migrate/54b32b3de899f513f172d2e14ff56d93.png)
 
-![img](https://images2018.cnblogs.com/blog/1228818/201804/1228818-20180425172026316-1086206534.png)
+`applicaiton` 完整的Spark应用程序
+
+`job`一个Applicaiton会调用多个Job，Job间串行执行
+
+`stage`DAG scheduler划分Stage，会把Job作业划分成多个stage。依据是shuffle依赖。一个Stage包含很多task，依据是最后一个分区数。
+
+`task` 并行执行，负责对一个分区进行计算操作
+
+## Spark 工作机制
+
+1. **构建运行环境** 
+
+   - Client提交Spark任务，Driver创建一个Context对象，负责与Cluster Manager通信以及资源申请、任务分配和监控。
+
+   - Executor注册：**Content向资源管理器注册申请运行Executor进程**，Executor运行情况随着心跳发送到资源管理器上。
+
+2. **任务划分和任务调度**
+
+   - `RDD`创建和转换：Context 会基于输入数据或已有数据集创建 RDD
+   - `DAG`构建：Spark根据RDD依赖关系构建DAG，
+   - `DAG Scheduler`划分Stage：Spark通过分析DAG将作业划分成多个Stage。每个stage包换了一组可以并行执行的任务集。
+   - `Task Scheduler`任务调度：`DAG Scheduler`根据stage的划分把任务发送到Task Scheduler，`Task Scheduler`把任务调度到不太executors上。
+
+3. **数据分区**
+
+   输入数据被划分成物理分区。RDD封装分区，在节点间并行处理
+
+4. **任务执行**
+
+   `Executor`执行Task Scheduler分配的任务
+
+   - 一个`Executor`进程有很多Task线程，Task对应RDD的操作
+
+5. **数据流动**
+
+   - `Shuffle`：转换操作需要跨分区聚合数据
+
+6. **任务完成返回结果到Driver**
+
+7. **容错和恢复**
+
+   ​	`RDD 的血统信息（lineage）` 提供容错能力，任何节点失败可以重新计算
+
+## Spark SQL解析流程
+
+1. 输入SQL
+2. 解析器：把SQL转换为抽象语法树AST
+3. 语义分析器：分析AST 
+4. 逻辑优化器：分析后的AST 转换成 逻辑计划
+5. 物理优化器：逻辑计划 转换成 物理计划
+6. 代码生成器：物理计划变成可以执行的java字节码
+7. 执行器：执行器执行
 
 ## Spark 优势
 
-1. 内存存储中间计算结果，减少磁盘IO
-2. MR只有 MAP和Reduce两种编程算子，Spark封装了多种Transformation和Action算子（map，reduce，groupByKey）
-3. Spark引进RDD（弹性分布式数据集），是spark基础数据单元，和mysql数据库中view类似
+1. **内存计算：**Spark使用内存计算作为核心计算引擎，减少磁盘IO
+2. **数据存储格式：**Spark支持多种数据存储格式，Parquet、ORC 等。在列式存储和压缩方面有优势
+3. **并行计算：**Spark将任务划分成多个并行任务，在多个节点上并行计算
+4. MR只有 MAP和Reduce两种编程算子，Spark封装了多种Transformation和Action算子（map，reduce，groupByKey）
+
+## partition和block
+
+HDFS中，block是磁盘的最小存储单元。block是物理存储单位
+
+Spark中，**partition** 是RDD的最小单元。partition是逻辑处理单位
+
+每个RDD可以分成多个partition，每个partition就是一个数据集片段，partition可以分配到不同节点上面计算。
 
 ## RDD
 
@@ -92,11 +143,11 @@ Spark和MR都是基于MR并行计算
 
 ![f738dbe3df690bc0ba8f580a3e2d1112](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e5caa08f11304397a3a1164f5e74c739~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
- rdd分布式弹性数据集本身不存储数据，作为数据访问的一种虚拟结构。所有算子都基于RDD执行，不可变，可分区，里面的元素可以并行计算。RDD执行过程中会生成DAG图。 （物理角度看RDD存储的是block和node之间的映射）
+RDD分布式弹性数据集本身不存储数据，作为数据访问的一种虚拟结构。所有算子都基于RDD执行，`不可变，可分区，里面的元素可以并行计算`。RDD执行过程中会生成DAG图。 （物理角度看RDD存储的是block和node之间的映射）
 
 - 弹性：数据可以保存在内存或者磁盘，数据优先内存存储，计算节点内存不够时可以把数据刷到磁盘等外部存储。
 - 分布式：对内部的元素进行分布式存储。RDD本质可以看成只读的，可分区的分布式数据集。
-- 数据集：存储数据集合
+- 数据集：一个RDD就是一个分布式对象集合，本质上是一个只读的分区记录集合
 - 容错性：RDD 的 `血脉机制`保存RDD的依赖关系。Checkpoint机制当RDD结构更新或者数据丢失时对RDD进行重建
 
 特性：
@@ -143,37 +194,157 @@ Action（执行）算子。
 
 Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血脉依赖关系重新计算，DAG调度中的stage，划分的依据也是RDD的依赖关系
 
-**宽依赖：** 父RDD每个分区被多个子RDD分区使用
+**宽依赖：** 每个子RDD分区依赖父RDD的全部分区
 
 ![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171657817-1513169131.png)
 
-**窄依赖：** 父RDD每个分区被子RDD的一个分区使用
+**窄依赖：** 每个子RDD依赖父RDD的同一个分区
 
 窄依赖允许子RDD的每个分区可以被并行处理，而且支持在一个节点上链式执行多条指令，无需等待其他父RDD的分区操作
 
 ![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171650540-1125656506.png)
 
+### Mapper和Reducer相当于什么算子
+
+Map() 和 reduceByKey()
+
+### 算子的区别
+
+#### groupByKey、reduceByKey、aggreageByKey
+
+- groupByKey  对数据集中的元素按键分组，但不进行任何聚合计算。它会生成一个（键，值序列）的数据集。
+- reduceByKey 按键合并数据集的值。对partition中数据根据不同key进行aggregate，再shuffle
+- aggreageByKey 
+
+#### cache、presist
+
+cache：默认将数据集存储在内存中
+
+persist：允许用户选择存储级别（例如，内存、磁盘或两者的组合）。
+
+#### repartition、coalesce
+
+repartition 重新分配数据，以改变RDD分区数量。需要全局shuffle。调整并行度，调整数据的分区分布
+
+coalesce  减少RDD的分区数，它尽可能避免进行全局数据洗牌，尽量在本地合并分区，可能会不均匀
+
+#### map、flatMap
+
+map 将函数用于RDD中每个元素，返回值构成新的RDD。例如，将每个数字乘以2。
+
+flatMap 与 `map` 类似，但每个输入元素可以映射到0或多个输出元素。例如，将句子分解为单词
+
+## RDD、DataFrame、DataSet
+
+都是Spark的弹性分布式数据集
+
+RDD：容错的、不可变的分布式数据集合
+
+DataFrame：在RDD基础之上的高级抽象。数据表格形式组长
+
+DataSet：是 DataFrame API 的一个扩展
+
 ## Spark Shuffle
 
 Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`groupByKey`、`join` 等）时，需要跨分区传输数据的过程。这通常涉及到在不同节点之间交换数据，以确保相同的键（key）聚集在一起进行计算。
 
-- 执行阶段：当一个Stage执行完需要与另一个stage进行数据交换时，Spark会开始Shuffle。
-- 数据存储：
-  - **内存溢写** Spark首先会在内存中存储Shuffle中间结果，如果内存不足，会溢写到磁盘，因为磁盘 I/O 速度较慢，可能会导致性能瓶颈。
-  - **排序，批量写入** 溢写数据之前，Spark 会先对内存中的数据进行**排序**。排序后的数据会被分批写入磁盘。默认情况下**每批 10000 条数据**。
-  - **合并文件** 当一个 Task 完成数据写入后，会产生多个临时文件。所有临时文件的数据会被读取出来合并，并按顺序写入最终的磁盘文件中。
-  - **索引文件** Spark会为每个磁盘文件生成一个索引
-- 数据传输：
-  - 数据传输通常使用 **网络协议**进行通信，例如 HTTP 协议或基于 TCP 的协议。Spark 在 Shuffle 过程中会通过网络将一个节点的中间数据发送到另一个节点。
+### Hash Shuffle
 
-### Sprak和MR的Shuffle的区别
+- **Map阶段**
 
-| 特性     | **Spark Shuffle**                                            | MapReduce Shuffle                                            |
-| -------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| 定义     | Spark Shuffle 是指当 Spark 执行宽依赖操作（如 `reduceByKey`、`groupByKey`、`join` 等）时，需要跨分区传输数据的过程。 | MapReduce Shuffle 是指 Map 阶段和 Reduce 阶段之间的数据传输过程。在 Map 阶段处理完数据后，数据根据键（key）被分组并排序，然后传输到 Reduce 阶段进行进一步的计算。 |
-| 内存     | 优先存储在内存中，不足时溢写到磁盘                           | 由于磁盘 I/O 和网络传输，性能较低                            |
-| 任务调度 | 基于 DAG 调度，智能任务分配和动态调度                        | 基于 Map 和 Reduce 阶段调度，较为简单                        |
-| 容错机制 | 通过 RDD 血统信息重新计算丢失的数据                          | 基于任务重试                                                 |
+  每个task处理输入数据，执行map、filter等操作。对数据进行分组，存入Map的buffer和block
+
+- **Shuffle Write**
+
+  - 每个task处理的数据按照key进行hash算计，将相同的key写入同一个内存缓冲区/磁盘文件。
+
+  - 磁盘文件数量：Task数量*Reduce任务数量(计算机结果的种类个数)
+
+
+- **Shuffle Read**
+- 上一个Stage计算结果相同的Key，从各个节点上拉到自己所在的节点上
+  
+- shuffle read task都有一个自己的buffer缓冲，每次只能拉取buffer能承载的数据(防止内存溢出)，在内存中聚合完再拉下一批
+
+
+- **Reduce阶段**
+
+  聚合、排序等处理
+
+```
+优化：
+缓冲区阶段，Task复用Buffer缓冲区。不需要为executor每一个task都创建buffer
+```
+
+### Sort Shuffle
+
+- **Map阶段**
+  - 数据写入内存数据结构：根据Shuffle算子，数据写入不同数据结构
+    - 聚合操作(ReduceByKey)：Map结构，允许在写入数据时聚合
+    - 非聚合操作(join): 使用Array结构，直接存入内存
+  - **内存缓冲**：每写入一条数据到内存数据结构，判断是否到达阈值。如果到达阈值，就把内存数据结构的数据溢写到磁盘，再清空内存数据结构。
+  
+- **Shuffle**
+  - **排序、分批溢写**：**溢写到磁盘之前，先根据key进行排序**。再以每批1万条数据形式分批写入
+  - **合并磁盘文件：** 所有任务完成后，合并磁盘文件
+  - **创建索引：** 根据下一个task 创建索引记录数据段的位置
+
+- **Reduce阶段**
+
+  根据索引获得数据，聚合、排序等处理
+
+```
+Bypass SortShuffle
+当数据量比较小的时候，Shuffle输出的分区较少，跳过排序过程，直接溢写
+```
+
+## Sprak和MR的Shuffle的区别
+
+**MR的shuffle**
+
+- Map端shuffle：分区，放入环形缓冲区，排序，Spill溢出，合并几个阶段
+
+- Reduce端shuffle：复制，合并，排序几个阶段
+
+**问题：**MR在map端进行一次排序，在reduce端对map的结果会进行一次排序。最后多个溢写文件在最后merge成一个输出文件的时候还会排序一次。MR 的全局排序消耗资源较大
+
+**Spark的shuffle**
+
+- 基于Hash的shuffle
+
+  Mapper根据Reduce数量创建相应的bucket，Mapper的结果`分区`到bucket
+
+  Reduce启动的时候，从内存或者磁盘拉取相应的bucket
+
+  Spark在Reduce端做聚合，不需要合并和排序。聚合是hashmap，将shuffle读取的key值插入到hashmap
+
+  **问题：** 创建Map*Reduce个小文件。I/O开销和缓存开销大
+
+- 基于sort的shuffle
+
+  Mapper先把数据写入内存数据结构。聚合类使用map数据结构，边聚合边写入；非聚合类(join)使用array数据结构直接写入内存
+
+  内存数据到达某个阈值就会溢写到磁盘，溢写之前，对key排序再分批写入
+
+  多次磁盘溢写会有多个文件，最终合并成一个大数据文件和一个索引文件
+
+## Spark是否可以完全取代Hadoop
+
+**稳定性**
+
+- **内存管理：** Spark依赖于内存存储中间数据。大量数据缓存在 RAM 中可能导致 Java 垃圾回收（GC）问题
+
+```
+GC问题：
+* 频繁的垃圾回收：大量缓存在内存中，新生代和老年代就有可能很快被填满，JVM就需要频繁的垃圾回收，GC期间，大部分用户线程需要暂停等待
+* 内存溢出： 垃圾回收无法有效释放足够的内存空间来满足新对象的分配需求，JVM 最终会内存溢出
+```
+
+- **代码质量处理：** 基于线程的task 资源隔离没有保证，代码执行过程复杂
+
+**数据处理能力**
+
+- **大数据集限制**：超过 RAM 大小的数据集，Spark 可能会遇到内存不足的问题，这在单个节点上尤为明显。如果内存不足，还是有磁盘I/O
 
 ## Spark 数据倾斜
 
@@ -221,7 +392,41 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
 
    给另一个RDD的数局扩容n倍，每个数标上1-n的前缀。在进行join
 
-## spark加载大数据量会不会失败
+## Spark的优化策略
+
+**延迟执行** Spark遇到转换操作时，会先记录下来，直到遇到行动操作时执行。可以把多个转换操作合并成一个任务
+
+**分区执行** Spark把数据划分成很多分区，分配给集群的不同节点并行运行
+
+**内存管理** Spark把数据优先存储在内存中，减少磁盘IO。同时还使用数据序列化和内存缓存提高内存利用率和传输效率
+
+**任务调度**  Spark使用任务调度器把任务分配给集群中不同节点运行
+
+**部分聚合** Spark可以在分区做部分聚合，再做全局聚合。例如Sort的shffule
+
+**广播变量** 集群的所有节点共享一个较小的只读变量时，广播变量减少数据传输和复制开销
+
+## Spark容错机制
+
+**数据容错：RDD的血统** 信息可以重新吉首丢失的数据分区
+
+**任务容错：任务调度器容错** 可以重新调度发生错误的任务，并且分配给其他可用节点运行
+
+**数据丢失容错：数据持久化** 把数据缓存到磁盘上，当节点发送故障，可以用持久化存储中恢复
+
+**节点容错：主从架构**。主节点（Driver）协调任务执行，如果挂了，可以重启一个新的主节点容错
+
+## Parquet文件存储
+
+列式存储，把同一列的数据存储在一起。查询时只需要读取需要的列
+
+同一列的数据存储在一起，有利于压缩算法和编码。减少存储空间降低磁盘IO
+
+支持多种压缩算法和编码方式
+
+存储了数据的模式信息，列名、数据类型等。Spark在查询时可以自动推断数据的模式
+
+## Spark加载大数据量会不会失败
 
 1. 内存溢出（OOM）
 
@@ -247,9 +452,7 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
 
    Spark加载外部存储系统时导致I/O 性能瓶颈
 
-## Spark join的有几种实现
-
-## spark的持久化(persist&缓存机制(cache)
+## Spark的持久化(persist&缓存机制(cache)
 
 **持久化**
 
@@ -271,7 +474,112 @@ Spark默认数据存储在内存，RDD容错机制，需要根据血统计算处
 
 `cache` 主要用于那些需要多次访问的数据，以减少重复计算的开销。
 
-## SPARK Architecture
+## Spark WordCount
+
+**创建SparkContent**
+
+**加载文本**  使用textfile函数加载文本，转换成RDD
+
+**数据转换** `flatmap()` 算子把文本拆分成单词，`map()`算子计算key，value
+
+**聚合** `groupByKey()` 算子聚合key-V，value相加
+
+**输出** `collect`算子把结果收集到Driver
+
+## Spark TopN
+
+使用`textfile`加载数据，转换成RDD
+
+**数据转换** 使用`map()` 或者`flatmap()` 计算 key-value
+
+**按键分组 **使用`groupByKey()` 将数据按key进行分组
+
+**计算TOPN ** 通过`mapValues`方法把前N个值取出来
+
+**全局取TOP N** 通过`reduceByKey()` 合并分区结果
+
+## Spark 分组排序
+
+使用`spark.read` 读取数据
+
+**分组排序** `groupBy` 分组，`orderBy`排序
+
+## Join类型
+
+**inner join** 内连接
+
+**outer join** 返回关联和不关联的数据。不关联的数据置空。`full outer join` `left outer join` `right outer join`
+
+**cross join** 笛卡尔积
+
+**Semi Join ** 左表中有匹配右表的行的那部分数据
+
+```sql
+SELECT *
+FROM table1
+WHERE id IN (SELECT id FROM table2);
+```
+
+**Anti join ** 左表中没有在右表中找到匹配的行的数
+
+```sql
+SELECT *
+FROM table1
+WHERE id NOT IN (SELECT id FROM table2);
+```
+
+## Join实现
+
+**Join原理：** join的两张表抽象为`流式遍历表`(大表)和`查找表`(小表)
+
+**Sort Merge Join**
+
+- 适用于大表join大表，默认join
+- 步骤： 
+  - 两张表根据key进行分区和排序，将可能join到一起的key放在同一个分区中
+  - 在Join 的时候，对于遍历表的下一条数据，只需要从查找表的上一次查找结束的位置找
+
+**Broadcast Hash Join**
+
+- 适用于大表join小表
+- 步骤
+  - 把`查找表`**广播到每个计算节点**，然后查找表放到hash表中。Join的时候直接hash查找不用shuffle了
+
+**Shuffle Hash Join**
+
+- 适用于大表join小表，且每个分区的记录不能太大
+- 步骤
+  - 把大表和小表按照相同的key进行分区，让**hash值一样的数据**分发到同一个分区，每个分区进行局部的哈希连接。
+
+**Broadcast Nested Loop Join**
+
+- 非等值连接：没有任何连接条件的场景
+- 将小表 广播到每个节点，然后每个节点执行嵌套循环连接，广播的表再与大表逐一对比
+
+**Cartesian Join**
+
+- join的时候没有 where条件 (on)，笛卡尔积 join
+
+## Spark调优
+
+Shuffle优化
+
+Join优化
+
+- 大表JOIN小表：小表声明为broadcast变量。把小表放到每个节点，再放到hash表。JOIN的时候直接查hash不需要shuffle了
+- 大表JOIN： 通过HASH分区使两个RDD拥有相同的分区
+
+数据倾斜优化
+
+- 倾斜的key就几个情况
+- 提高shuffle并行度
+- 两段聚合
+- 两个数据量都很大的情况
+- join操作的RDD还是有大量key倾斜，加随机前缀大散，再给另一个RDD扩容n倍打上0-n的前缀。
+
+****
+
+### SPARK Architecture
 
 ![image.png](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/a66bb7a6aaba462097ea327f0c6eacff~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp?)
 
@@ -293,6 +601,29 @@ Spark默认数据存储在内存，RDD容错机制，需要根据血统计算处
 - 每个application 获取专属的executer进程，该进程在application期间一直驻留以多线程方式运行task
 - Spark与资源管理器无关，只有能够获取executor进程
 - 提交SparkContext的Client应该靠近Worker节点。因为Spark Application运行过程中SparkContext和Executor之间有大量的信息交换；如果想在远程集群中运行，最好使用RPC将SparkContext提交给集群，不要远离Worker运行SparkContext。
+
+## Spark作业提交流程
+
+1. **运行环境构建**
+   - 客户端提交Spark任务（Spark SQL通过抽象语法树解析、生成逻辑计划、 查询优化器优化、生成物理计划），**Driver创建一个Context对象，负责与Cluster Manager(资源管理器) 通信以及资源申请、任务分配和监控。**
+   - **Content向资源管理器注册申请运行Executor进程** Executor运行情况随着心跳发送到资源管理器上。SparkContext 可以看成是应用程序连接集群的通道.
+   - **RDD 创建**：在任务提交的初期，Context 会基于输入数据或已有数据集创建 RDD
+2. **资源管理器为Executor分配资源，启动Executor进程**
+   - Executor运行情况将随着心跳发送到资源管理器上。一个Executor进程又很多Task线程，Task对应RDD的操作
+   - **RDD 分区**：RDD 被分割成多个分区，并且这些分区被分配给不同的 Executor。
+3. Spark content 根据RDD 依赖关系构建DAG图
+   - DAG图交给DAG 调度器（**DAGScheduler**）进行解析。DAG调度器分解成多个阶段 `Stage`（任务集），计算出各个阶段的依赖关系。
+   - 把任务集交给底层的任务调度器（**TaskScheduler**）进行处理。Executor向Context申请任务（`Task`）
+   - **RDD 的血统信息（lineage）**：DAGScheduler 会根据 RDD 之间的依赖关系生成 RDD 的血统信息，用来追踪每个 RDD 的转换历史。这样，即使某个 Task 失败了，Spark 也能通过血统信息重新计算丢失的分区。
+4. 任务调度器（**TaskScheduler**）将任务分发给 Executor 运行，同时，SparkContext 将应用程序代码发放给 Executor。
+   - **RDD 执行过程**：当任务分配到 Executor 时，Executor 会开始执行与 RDD 相关的操作。例如，`map` 或 `filter` 等操作将在 Executor 内部针对 RDD 的分区并行执行。
+   - **数据传输与 Shuffle**：如果需要跨分区进行数据聚合（如 `reduceByKey`），Executor 会进行数据的 Shuffle 操作。
+5. 任务在Executor运行，完成后写入数据在存储然后释放所有资源.
+   - **RDD 计算**：Executor 执行任务并计算 RDD。
+   - **持久化和缓存**：如果 RDD 被持久化（`persist` 或 `cache`）或中间结果需要被复用，Executor 会将计算结果存储在内存中，避免重复计算。
+   - **完成任务后释放资源**：任务完成后，Executor 将结果写入外部存储系统（如 HDFS、S3 等）。随后，Executor 会通过心跳向资源管理器报告任务执行状态。如果没有更多任务，Executor 会释放资源。
+
+![img](https://images2018.cnblogs.com/blog/1228818/201804/1228818-20180425172026316-1086206534.png)
 
 ## Reference
 

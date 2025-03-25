@@ -2,8 +2,6 @@ spark为什么比MapReduce快
 
 spark的作业提交流程
 
-
-
 Spark的shuffle和MR的shuffle的区别
 
 spark的shuffle过程数据一直放在内存中吗
@@ -11,17 +9,79 @@ spark的shuffle过程数据一直放在内存中吗
 rdd有哪些shuffle类算子
 shuffle的本质是什么
 
-
-
 spark的常用算子介绍一下
 
 rdd的拓展性，有什么缺陷，弹性体现在哪里
-
-
 
 spark语句的解析方法
 spark的命令执行过程
 
 
 
-group by和distinct，join的MR执行过程有什么区别
+spark向量化执行原理
+spark内存模型
+spark执行过程原理
+什么是宽窄依赖，怎么划分
+
+开动态分区union写入和不开动态分区分开写入有什么区别
+dws层怎么设计
+
+
+
+
+
+飞猪数据组 偏向平台建设方向
+
+1.自我介绍
+
+2.研究生项目
+
+3.[流计算](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=流计算&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiLmtYHorqHnrpciLCJ6aGlkYV9zb3VyY2UiOiJlbnRpdHkiLCJjb250ZW50X2lkIjoxOTAzOTEyMDIsImNvbnRlbnRfdHlwZSI6IkFydGljbGUiLCJtYXRjaF9vcmRlciI6MSwiemRfdG9rZW4iOm51bGx9.8ozKqPRyr-L0BsoJ0cD6h2Hqpai677CC5WrrNs63I1I&zhida_source=entity)
+
+4.java内存模型
+
+5.垃圾回收
+
+6.什么时候发生fullGC
+
+7.怎么判断是垃圾
+
+8.数据结构了解哪些
+
+9.[链表](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=链表&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiLpk77ooagiLCJ6aGlkYV9zb3VyY2UiOiJlbnRpdHkiLCJjb250ZW50X2lkIjoxOTAzOTEyMDIsImNvbnRlbnRfdHlwZSI6IkFydGljbGUiLCJtYXRjaF9vcmRlciI6MSwiemRfdG9rZW4iOm51bGx9.7T1KfId0A9HpOgP_GzPMxpPMqdaI2k8eRml8UIDzh0M&zhida_source=entity)、数组的区别
+
+10.mysql为什么选用B+树
+
+11.能否估计下b+树做索引的整个表的大小
+
+[12.mr](https://link.zhihu.com/?target=http%3A//12.mr/)、spark的shuffle有什么不同
+
+13.[宽依赖](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=宽依赖&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiLlrr3kvp3otZYiLCJ6aGlkYV9zb3VyY2UiOiJlbnRpdHkiLCJjb250ZW50X2lkIjoxOTAzOTEyMDIsImNvbnRlbnRfdHlwZSI6IkFydGljbGUiLCJtYXRjaF9vcmRlciI6MSwiemRfdG9rZW4iOm51bGx9.l-oW-xSP5hSZqiJsUadSvPtkOjOlazzsfkssYFzxWTQ&zhida_source=entity)是什么
+
+14.什么情况下需要划分宽依赖，哪些算子，[groupby](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=groupby&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiJncm91cGJ5IiwiemhpZGFfc291cmNlIjoiZW50aXR5IiwiY29udGVudF9pZCI6MTkwMzkxMjAyLCJjb250ZW50X3R5cGUiOiJBcnRpY2xlIiwibWF0Y2hfb3JkZXIiOjEsInpkX3Rva2VuIjpudWxsfQ.73O0EQGbto0UDr71AWQzVJ_1HkGP7RH2U9GZcFrgIHI&zhida_source=entity)是行动算子吗
+
+15.mr里join怎么做（说的spark的join）
+
+16.shuffle-join和sort-join使用场景有什么不同
+
+17.一千万个整数，在5mb内存里排序
+
+反问：
+
+1.最后一题不分治怎么解决：用[数据压缩](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=数据压缩&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiLmlbDmja7ljovnvKkiLCJ6aGlkYV9zb3VyY2UiOiJlbnRpdHkiLCJjb250ZW50X2lkIjoxOTAzOTEyMDIsImNvbnRlbnRfdHlwZSI6IkFydGljbGUiLCJtYXRjaF9vcmRlciI6MSwiemRfdG9rZW4iOm51bGx9.JlCmK5RePAPjQZ2FmPhI77mzVO55yWDR612TIGLFN2A&zhida_source=entity)计算
+
+2.介绍下部门：飞猪数据组，涉及数仓、[数据科学家](https://zhida.zhihu.com/search?content_id=190391202&content_type=Article&match_order=1&q=数据科学家&zd_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlkYV9zZXJ2ZXIiLCJleHAiOjE3NDI5NzgwOTIsInEiOiLmlbDmja7np5HlrablrrYiLCJ6aGlkYV9zb3VyY2UiOiJlbnRpdHkiLCJjb250ZW50X2lkIjoxOTAzOTEyMDIsImNvbnRlbnRfdHlwZSI6IkFydGljbGUiLCJtYXRjaF9vcmRlciI6MSwiemRfdG9rZW4iOm51bGx9.T9ItLuoJ7q7vYSbeQlxdxwpHwruEUCOzJ_VPM9It_z0&zhida_source=entity)、平开
+
+
+
+1. 实习产出表
+2. hadoop体系
+3. hive和hadoop关联
+4. join 的mr详细过程
+5. 数据倾斜
+6. 如果只有几个键导致数据倾斜
+7. 数仓建模的意义
+8. 为什么要建数仓不直接用关系型数据库
+9. 3nf
+10. 为什么实际建模不遵循3nf
+11. 分层

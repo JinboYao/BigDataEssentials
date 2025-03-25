@@ -31,37 +31,24 @@ Hadoop 使用 `Writable` 接口作为其序列化框架的核心。
 - `void write(DataOutput out)`：将对象的字段写入字节流。
 - `void readFields(DataInput in)`：从字节流中读取字段并赋值给对象。
 
-### map和reduce的数量
-
-1. map数量：数据切分成的block块数量决定
-
-   ```
-   如果需要调整分片大小，可以通过以下参数：
-   
-   mapreduce.input.fileinputformat.split.maxsize：设置最大分片大小。
-   
-   mapreduce.input.fileinputformat.split.minsize：设置最小分片大小。
-   ```
-
-2. reduce 数量：Reduce任务的数量。job.setNumReduceTasks(int)设置，默认为1
-
-3. mapTask数量：一个job的map阶段MapTask并行度（个数），由客户端提交job时的切片个数决定
-
-4. reduceTask 数量：实际运行的 Reduce 任务的数量。如果集群资源不足，ReduceTask 可能会分批运行。（如果 Reduce 数量为 4，但集群只能同时运行 2 个 ReduceTask，则 ReduceTask 会分两批运行）
-
 ### ☆MapReduce跑得慢的原因
 
 Mapreduce 程序效率的瓶颈在于两点：
-1）计算机性能
-  CPU、内存、磁盘健康、网络
-2）I/O 操作优化
-  （1）数据倾斜
-  （2）map和reduce数设置不合理
-  （3）reduce等待过久
-  （4）小文件过多
-  （5）大量的不可分块的超大文件
-  （6）spill次数过多
-  （7）merge次数过多等
+1）硬件资源限制
+
+- **磁盘I/O速度**
+- **网络带宽**：在shuffle阶段需要较高的带宽
+- **内存资源**
+
+2）计算过程瓶颈
+
+1. **数据倾斜** 数据分布不均匀，数据倾斜导致某个Reducer运行时间长
+2. **小文件过多**  每个文件都需要启动一个Map，大量小文件导致很大map启动和文件读取开销
+3. **Map和reduce数设置不合理**  Map数设置过小，单个节点资源未能充分利用，任务失败风险更大；Map数设置过大，资源碎片化，启动JVM进程的开销大
+4. **大量的不可分块的超大文件** 会导致单个Map需要计算的数据量变大，运行时间变长
+5. **spill次数过多** 频繁spill增加IO开销
+6. **merge次数过多** shuffle阶段需要merge，频繁merge增加CPU、IO负担
+7. **Map设置的运行时间太长，Reduce等待过久**  Reduce任务在开始处理之前需要等待所有Map任务完成
 
 ### ☆MapReduce优化方法
 
@@ -100,23 +87,33 @@ Mapreduce 程序效率的瓶颈在于两点：
 
 ### ☆HDFS小文件优化方法
 
+**原因:**
+
+数据源上传时包含很多小文件
+
+reduce数量越多，包含的小文件就越多。（每个 Reduce 任务一个输出文件）
+
 **HDFS小文件弊端**
 
-HDFS上每个文件都要在NameNode上建立一个索引，索引大小大约150byte.当小文件多的时候，就会产生很多的索引文件，一方面会大量占用namenode的内存空间，另一方面就是索引文件过大是的索引速度变慢
+1. 小文件启动多个map，一个map需要开启一个jvm
+
+2. HDFS上每个文件都要在NameNode上建立一个索引，索引大小大约150byte.当小文件多的时候，就会产生很多的索引文件，一方面会大量占用namenode的内存空间，另一方面就是索引文件过大使的索引速度变慢
 
 **解决方案**
 
 （1）Hadoop Archive
     是一个高效地将小文件放入HDFS块中的文件存档工具，它能够将多个小文件打包成一个HAR文件，这样在减少namenode内存使用的同时。
 （2）Sequence file
-    sequence file由一系列的二进制key/value组成，如果为key小文件名，value为文件内容，则可以将大批小文件合并成一个大文件。（3）CombineFileInputFormat
+    sequence file由一系列的二进制key/value组成，如果为key小文件名，value为文件内容，则可以将大批小文件合并成一个大文件。
+
+（3） `setNumReduceTasks()`合理设置Reduce数量
+
+（4）CombineFileInputFormat
     CombineFileInputFormat是一种新的inputformat，用于将多个文件合并成一个单独的split，另外，它会考虑数据的存储位置
 
 ## HDFS(分布式文件存储系统)
 
 ### HDFS架构
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20210228145111743.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDMxODgzMA==,size_16,color_FFFFFF,t_70)
 
 ![在这里插入图片描述](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/7614738a4ec5464eabc8535b244df28a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
@@ -188,57 +185,122 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 
 **bzip2、gzip、lzo、snappy**
 
+### HDFS block大小,过大或者过小的影响
+
+Block块默认128M，依据是`最佳传输损耗理论` 寻址时间占总传输时间1%
+
+一般磁盘寻址时间10ms，传输速率100m/s。
+
+```
+10ms* 100 * 100m/s =100M
+```
+
+- Block设置过大
+
+  磁盘的传输时间会更明显大于寻址时间，程序处理这块数据时会很慢
+
+  MR的map任务一次只处理一个块的数据，运行时间很慢
+
+- Block设置过小
+
+  大量小文件增加NameNode的元数据存储
+
+  可能增加碎片化
+
+  寻址时间增加
+
 ## MapReduce(分布式计算架构)
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20201210185505552.jpg?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L01heV9KX09sZGh1,size_16,color_FFFFFF,t_70#pic_center#pic_center)
 
-1. split 输入分片
+1. Map阶段
 
    ```
    输入文件，InputFormat数据读取
-   split分片：根据HDFS的block块大小分片。假设HDFS大小为128M，文件是128*10M，Mapreduce就会分为10个MapTask。
-   ```
-2. Map
-
-   ```
+   split分片：根据HDFS的block块大小分片，输出<key-键值对，value-每一行的内容>形式。假设HDFS大小为128M，文件是128*10M，Mapreduce就会分为10个MapTask。
    map处理每一行的内容，分别计算 key，value的list
    ```
 
-   （溢写之前）优化：combiner 合并每个map task的重复key值
-3. shuffing
+   (优化) `combine`合并：combiner 合并每个map task的重复key值
+
+2. shuffing
+
+   **Map端Shuffle**
+
+   `Partition`：map（）函数输出的<k,v>list，先根据reducetask的数量使用**HASH算法**生成对应的分区
+
+   `buffer`：写入入环形缓冲区（默认大小100M）
+
+   `Spill`溢写
+
+   - `Sort`(分区内排序)：根据key值对分区中的数据使用快速排序算法进行排序，每个分区内的数据是有序的
+   - (选择)`combiner`合并：combiner 重复key值，value相加
+   - 生成溢写文件：环形缓冲区到达一定阈值（80%），数据就会溢出到本地磁盘文件，生成一个临时文件
+
+   `merge`合并：多个临时文件`归并排序`生成最终的一个**分区且已排序**的大文件(排序+合并)
+
+   **Reduce 端 Shuffle**
+
+   `Copy`复制：Reduce会拉取同一个分区内的各个MapTask结果放在内存，放不下就溢写到磁盘
+
+   `merge`合并：在远程拷贝数据的同时，ReduceTask启动了两个后台线程对内存和磁盘上的文件进行合并
+
+   `Sort`排序：对所有数据进行一次`merge归并排序`（这样就可以满足将key相同的数据聚在一起）
+
+3. Reduce
 
    ```
-   1、MapTask收集map（）方法输出的<k,v>list，放入环形缓冲区（默认大小100M）.
-   2、环形缓冲区到达一定阈值（80%），数据就会溢出到本地磁盘文件，多个溢写形成大文件。
-   3溢写之前(分区+快排)：合并过程中，分区算法（HASH算法）和对key进行快速排序
-   （在map阶段环形缓冲区的数据写入到磁盘的时候会根据reducetask的数量生成对应的分区，然后根据对应数据的哈希对分区数取模写入，然后会根据key值对分区中的数据使用快速排序算法进行排序，所以每个分区内的数据是有序的）
-   4、合成大文件后，map端shuffle的过程也就结束了，后面进入reduce端shuffle的过程。
-   5、Reduce会拉取同一个分区内的各个MapTask结果放在内存，放不下就溢写到磁盘
-   6、对内存和磁盘的数据进行merge归并排序（这样就可以满足将key相同的数据聚在一起）
-   ```
-4. reduce
-
    reduce从合并的文件中取出一个一个的键值对group，调用定义的reduce方法（），生成最终的输出文件。完成后output到HDFS中
+   ```
 
-### MapReduce两次排序
+### MapReduce三次排序
 
-第一次在Map从环形缓冲区写入磁盘时，会根据Reduce的数量进行分区，然后根据数据的Hash取模写入。之后根据快排进行排序，数据有序
+Map端`spill`之前：根据Reduce的数量进行分区，然后根据数据的Hash取模写入。每个分区内进行`快排`
 
-第二次是reduce阶段，reduceTask去多个Maptask节点上对应分区拉取数据，采用归并排序对拉取的key值排序。
+Map端`merge`: 		 多个临时文件`归并排序`生成最终的一个**分区且已排序**的大文件
 
-### MapReduce中的Combine是干嘛的?有什么好外?
+Reduce端`merge`：  Map端的所有数据进行`归并排序`，将key值进行排序
+
+### MapReduce的Combine
 
 对MapTask的输出做一个重复key值的合并操作（{key，[V1,V2]}）,局部汇总减少网络传输。
 
-### MapReduce 2.0容错
+### Map和Reduce的数量
+
+1. map数量：数据切分成的block块数量决定
+
+   ```
+   如果需要调整分片大小，可以通过以下参数：
+   mapreduce.input.fileinputformat.split.maxsize：设置最大分片大小。
+   mapreduce.input.fileinputformat.split.minsize：设置最小分片大小。
+   ```
+
+2. reduce 数量：Reduce任务的数量。job.setNumReduceTasks(int)设置，默认为1
+
+3. mapTask数量：一个job的map阶段MapTask并行度（个数），由客户端提交job时的切片个数决定
+
+4. reduceTask 数量：实际运行的 Reduce 任务的数量。如果集群资源不足，ReduceTask 可能会分批运行。（如果 Reduce 数量为 4，但集群只能同时运行 2 个 ReduceTask，则 ReduceTask 会分两批运行）
+
+### MapReduce容错
 
 1）MRAppMaster容错性
   一旦运行失败，由YARN的ResourceManager负责重新启动，最多重启次数可由用户设置，默认是2次。一旦超过最高重启次数，则作业运行失败。
+
 2）Map Task/Reduce Task 
 
    Task周期性向MRAppMaster汇报心跳；一旦Task挂掉，则MRAppMaster将为之重新申请资源，并运行之。最多重新运行次数可由用户设置，默认4次。
 
 ## YARN
+
+![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/f39beb0b7a0ed71a88faf203f459d507.png)
+
+ResourceManager：整个集群所有资源的管理者。`作用`:处理客户端请求、监控NodeManager、启动或监控ApplicationMaster、资源的分配与调度。
+
+NodeManager：单个节点服务器资源管理者。`作用：`管理单个节点上的资源、处理来自ResourceManager的命令、处理来自ApplicationMaster的命令。
+
+ApplicationMaster：单个任务运行的老大，任务在Container内运行客户端提交一个job，就会产生一个ApplicationMaster。`作用：`为应用程序申请资源并分配给内部的任务、任务的监控与容错。
+
+Container：对任务运行环境的抽象，虚拟化技术容器，相当于一台独立的服务器，里面封装了任务运行所需要的资源，如内存、cpu、磁盘、网络等。`好处：`任务运行完直接释放。
 
 ### Hadoop中的主要调度器
 
@@ -273,7 +335,7 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 3. 编译器：根据元数据信息生成查询计划。提交给YARN分配资源
 4. Hadoop执行生成的任务，计算HDFS的数据，结果写回HDFS
 
-### HIVE编译原理
+### HIVE SQL编译原理
 
 1. 词法、语法解析：根据SQL 的语法规则，完成 SQL 词法，语法解析，将 SQL 转化为抽象语法树 AST Tree；
 2. 语义解析：遍历 AST Tree，抽象出查询的基本组成单元 QueryBlock；
@@ -282,7 +344,7 @@ HDFS写入时，把文件分隔成block，每个block的3个副本存储在三�
 5. 生成物理执行计划：遍历 OperatorTree，翻译为 MapReduce 任务；
 6. 优化物理执行计划：物理层优化器进行 MapReduce 任务的变换，生成最终的执行计划
 
-### UDF、UDAF、UDTF的区别
+### UDF、UDAF、UDTF
 
 UDF 对单个输入值返回单个结果
 
@@ -290,31 +352,67 @@ UDAF 处理多行数据返回单个聚合值，类似 sum()，avg()
 
 UDTF 可以从单个输入行生成多个输出行的函数。可以返回包含多列和多行的表格结果。例如爆炸函数
 
+**执行阶段**
+
+| 自定义函数 |                                                              | 执行阶段                      |
+| ---------- | ------------------------------------------------------------ | ----------------------------- |
+| UDF        | 单个输入值返回单个结果，例如Upper()                          | map() 端 转换功能             |
+| UDAF       | 处理多行数据返回单个聚合值，类似 sum()，avg()                | reduce阶段或者 reduce&map阶段 |
+| UDTF       | 单个输入行生成多个输出行的函数。<br />可以返回包含多列和多行的表格结果。例如爆炸函数 | map端                         |
+
+**如何自定义**
+
+UDF
+
 ```
-SELECT product_id, explode(features) as feature
-FROM products;
+* 继承org.apache.hadoop.hive.ql.UDF函数；
+* 重写evaluate方法，evaluate方法支持重载。
+```
+
+UDAF
+
+```
+* 继承org.apache.hadoop.hive.ql.exec.UDAF类，并实现一个内部的UDAFEvaluator接口
+* 实现 Evaluator 方法
+    init():   类似于构造函数，用于UDAF的初始化
+    iterate():接收传入的参数，并进行内部的轮转，返回boolean
+    terminatePartial():无参数，其为iterate函数轮转结束后，返回轮转数据，类似于hadoop的Combiner
+    merge():  接收terminatePartial的返回结果，进行数据merge操作，其返回类型为boolean
+    terminate():返回最终的聚集函数结果
+```
+
+UDTF
+
+```
+* 继承org.apache.hadoop.hive.ql.udf.generic.GenericUDTF类
+* 重写initialize(), process() 和 close() 方法
+    initialize() 返回UDTF的返回行的信息（返回个数，类型）
+    process() 处理函数
+    close() 清理
 ```
 
 ### HIVE group by的MR实现
 
-**MAP 执行映射操作** ：在映射操作中，每一行数据都会被处理。处理过程中，Hive会根据 `GROUP BY`语句中的字段计算每行的键值对。键是 `GROUP BY`的字段值，值通常是整行数据或者是需要进行聚合的字段。
+**MAP ** ：将group by的字段组合作为一个key，如果group by单个字段，那么key就一个。将group by之后要进行的聚合操作字段作为value
 
-**Shuffle 分区与排序** ：在Map阶段输出的数据会根据键（即 `GROUP BY`的字段）被分配到不同的Reducer。这个过程中数据也会被排序或者进行哈希分区，确保同一个键的所有数据都被发送到同一个Reducer。
+- 如果要进行count，则value是赋1
 
-**Reduce **数据聚合：Reducer接收到所有映射到相同键的数据后，开始执行聚合操作。这包括但不限于计算平均值、求和、计数、最大值和最小值等。
+- 如要sum另一个字段，那么value就是该字段。
+
+**Shuffle 分区与排序** ：根据Key被分配到不同的Reducer。
+
+**Reduce **数据聚合
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/3cacabf4336e0c9004822dfa02991da4.png)
 
 ### HIVE distinct的MR实现
 
-MAP
+**Map**
 
-* **键值对生成** ：在这个阶段，Map任务对每一行数据生成键值对。对于 `DISTINCT`查询，整行数据或指定的字段（取决于查询的具体语法，如 `SELECT DISTINCT column1, column2 FROM table;`）会被用作键，而值通常是一个空记录或者某个可以忽略的常量。
-* **局部去重** ：Map阶段可以选择性地进行一个局部聚合过程（Combine过程），这里会将具有相同键的记录去重，只保留一份，以减少后续阶段的数据量和处理压力。
+* **键值对生成** ：整行数据/指定的字段  作为Key，Value为常量或者空值。
+* **局部去重** ：可以选择性地进行一个局部聚合过程（Combine过程），仅保留具有相同键的唯一记录。
 
-Shuffle
-
-Reduce
+**Reduce**
 
 * **全局去重** ：尽管局部去重已在Map阶段进行，但最终的去重发生在Reduce阶段。Reducer接收到分组好的键值对后，每个组只需要输出一次键值对（因为相同键的所有值已经在Shuffle阶段被聚集到一起）。
 
@@ -322,17 +420,45 @@ Reduce
 
 ### HIVE join的MR实现
 
-map：map阶段的value包括tag，可能是表名称。<表tag，表数据>
+map：map阶段生成键值对。key是join的列，value是 <表tag，数据>
 
-reduce：根据key值完成join操作，通过tag值识别不同表数据
+reduce：根据key值完成join操作，通过tag值识别不同表数据组合一下
 
 ![img](https://imgconvert.csdnimg.cn/aHR0cDovL2ltZy5seHcxMjM0LmNvbS8wNjI1LTEuanBn?x-oss-process=image/format,png#pic_center)
 
-**一张表为小表** map join 进行聚合
+### Map join原理
 
-**都为大表** 将join on公共字段相同的数据划分到同一个分区->传递到同一个reduce，实现聚合
+**场景：** 小表join大表
 
+**参数：** `hive.auto.convert.join =true`
 
+**执行流程：**
+
+1. 通过MaoReduce  Local Task 将小表存入内存，生成HashTable 文件，上传到cache中
+2. MR Job在Map阶段，每个Map从Cache中读取HashTableFile到内存，在Map阶段直接Join然后传递给下一个MR任务。
+
+### TOP N的MR实现
+
+Map：维护一个TopN的记录，Key 是需要查看的键，value是需要排序的数据
+
+Reduce：收到所有的局部TopN记录，Reducer 再从这些记录中计算最终的全局 Top N。
+
+### HIVE动态分区和静态分区
+
+**动态分区：**Hive根据插入数据的值自动创建所需的分区目录
+
+```sql
+SET hive.exec.dynamic.partition=true;
+SET hive.exec.dynamic.partition.mode=nonstrict;
+```
+
+**静态分区：**用户在插入数据时需要明确指定每个分区的路径和名称
+
+使用：
+
+```
+对于频繁变更分区键值的表，优先考虑动态分区。对于分区键值稳定，数据更新不频繁的情况，可以使用静态分区以提高数据管理的效率。
+```
 
 ### 分区表、分桶表、内部表、外部表
 
@@ -346,38 +472,14 @@ reduce：根据key值完成join操作，通过tag值识别不同表数据
 
 ### HIVE的数据存储格式
 
-**TextFile（纯文本格式）**
-
-* **描述** ：TextFile是Hive默认的存储格式，数据以行文本的形式存储，字段之间通过分隔符（如逗号、制表符等）进行分隔。
-* **缺点** ：不支持压缩，数据冗余高，占用存储空间大，查询性能较低。
-* **适用场景** ：小规模的数据集或要求可读性高的场景。
-
-**SequenceFile**
-
-* **描述** ：Hadoop中的一种二进制文件格式，数据以<key, value>对的形式存储，支持块压缩和记录压缩。
-* **优点** ：支持压缩，查询性能比TextFile好。
-* **缺点：** 不支持列式存储，随机读写性能较差。
-* **适用场景** ：需要进行快速序列化和反序列化的场景。
-
-**RCFile（Row Columnar File）**
-
-- **描述** ：将数据按行进行分块存储，每个块内部再按列存储。
-- **优点** ：列式存储，支持压缩，能够加速某些只查询部分列的操作。
-- **缺点** ：数据压缩和查询性能比不上更新的格式（如ORC和Parquet）。
-- **适用场景** ：需要列式存储但不要求最高压缩率和查询性能的场景。
-
-ORC（Optimized Row Columnar）
-
-* **描述** ：ORC是一种优化的列式存储格式，专为Hive设计，能够高效地存储和处理大数据集，支持复杂的压缩和索引。
-* **优点** ：支持高级压缩算法（如ZLIB、Snappy），极大减少存储空间。内置索引，支持快速查询，能够跳过不必要的块。适合大数据集和大规模的分析任务。
-* **缺点** ：只适用于Hive，不适合非Hive工具。
-* **适用场景** ：大规模数据仓库和高性能查询场景。
-
-Parquet
-
-- **描述** ：Parquet是一种开源的列式存储格式
-- **优点** ：列式存储，压缩性能优秀，适合分析型查询。
-- **适用场景** ：跨平台的数据分析任务，尤其是与Spark和Impala结合使用时。
+| 存储格式         | 描述                           | 优点                             | 缺点                         |
+| ---------------- | ------------------------------ | -------------------------------- | ---------------------------- |
+| **TextFile**     | 默认的纯文本格式。             | 易于使用和理解。                 | 效率低，不支持压缩。         |
+| **SequenceFile** | 二进制格式，支持分块和压缩。   | 更紧凑，提高 I/O 性能。          | 不易直接阅读。               |
+| **RCFile**       | 列存储格式，优化列查询。       | 提高列查询效率，支持压缩。       | 文件查看不便。               |
+| **ORC**          | 优化的行列式存储格式。         | 高效压缩，查询快，支持ACID事务。 | 创建和维护成本相对较高。     |
+| **Parquet**      | 流行的列式存储格式。           | 与多种数据处理工具兼容性好。     | Hive集成程度低于ORC。        |
+| **Avro**         | 支持丰富数据结构的序列化格式。 | 适用于数据交换，支持schema变更。 | 性能可能不如专门的Hive格式。 |
 
 ### Sort By，Order By，Cluster By，Distrbute By
 
@@ -389,41 +491,13 @@ distrbute by 按照指定的字段对数据进行划分输出到不同的reduce
 
 cluster by  数据划分到不同reduce中
 
-### split、coalesce及collect_list函数
-
-split 把字符串划分成数组
-
-coalesce（T1,T2）返回第一个非空值
-
-collect_list（）将一组值合并成一个数组
-
-### Hive获取json
-
-**get_json_object**
-
-提取单个HIVE列中json字符串
-
-```
-SELECT get_json_object('{"a":{"b":1}}', '$.a.b') AS value;
--- 输出: "1"
-```
-
-**json_tuple**
-
-提取多个字段
-
-```
-SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
--- 输出: Alice, 30
-```
-
 ### Fetch抓取和本地模式
 
 - Fetch抓取是指，Hive中对某些情况的查询可以不必使用MapReduce计算。例如：SELECT * FROM employees;在这种情况下，Hive可以简单地读取employee对应的存储目录下的文件，然后输出查询结果到控制台。
 
 - 查询触发执行任务时消耗可能会比实际job的执行时间要多的多，Hive可以通过本地模式在单台机器上处理所有的任务。
 
-### Hive数据倾斜
+### ☆Hive数据倾斜
 
 **原因：**
 
@@ -490,28 +564,6 @@ SELECT json_tuple('{"name": "Alice", "age": 30}', 'name', 'age') AS (name, age);
 
 第二个MR Job（最终聚合）再根据预处理的数据结果按照Group By Key 分布到 Reduce 中（这个过程可以保证相同的 Group By Key 被分布到同一个Reduce中），最后完成最终的聚合操作。
 
-### HIVE 小文件调优
-
-**原因:**
-
-数据源上传时包含很多小文件
-
-reduce数量越多，包含的小文件就越多
-
-**影响：**
-
-1、小文件启动多个map，一个map需要开启一个jvm
-
-2、HDFS中，一个小文件对象占150byte，小文件过多占用大量内存
-
-**解决方案：**
-
-1、Hadoop archive命令：小文件归档
-
-2、参数设置：减少reduce数量
-
-3、使用Sequencefile作为表存储格式在一定程度上可以减少小文件数量
-
 ### SQL运行很慢的原因
 
 1、数据倾斜
@@ -539,7 +591,7 @@ Hive底层依赖MapReduce来执行查询。当查询较复杂时，生成的MapR
 Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合的文件格式（如TextFile）会增加I/O开销，导致查询变慢。使用ORC或Parquet等压缩格式，可以大幅减少存储空间并提高查询性能。
 ```
 
-## SQL优化
+### HIVE SQL优化
 
 1、数据探查阶段
 
@@ -563,17 +615,39 @@ Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合�
 - 少量固定key倾斜，单独做处理后合并
 - key值拼接随机数
 
-## Reference
+## 手撕MapReduce程序
 
-https://juejin.cn/post/7011365385098231816
+### 统计单词的个数
 
-https://cloud.tencent.com/developer/article/1431491
-
-https://zhuanlan.zhihu.com/p/482548135
-
-MR JOIN
-
+```java
+public class WcMapper extends Mapper<LongWritable, Text, Text, IntWritable>{
+	@Override
+	protected void map(LongWritable key, Text value, Context context)
+			throws IOException, InterruptedException {
+		String line = value.toString();
+		String[] words = line.split(" ");
+		for (String word : words) {
+			context.write(new Text(word), new IntWritable(1));
+		}
+	}
+}
+public class WcReducer extends Reducer<Text, IntWritable, Text, IntWritable>{
+	@Override
+	protected void reduce(Text key, Iterable<IntWritable> values,
+			Reducer<Text, IntWritable, Text, IntWritable>.Context context) throws IOException, InterruptedException {
+		int count = 0;
+		for (IntWritable value : values) {
+			count += value.get();
+		}
+		context.write(key, new IntWritable(count));
+		
+	}
+}
 ```
+
+### JOIN
+
+```java
 public class Job_JoinDriver {
   	// mapper
     static class Job_JoinMapper extends Mapper<LongWritable, Text, Text, Text> {
@@ -631,3 +705,13 @@ public class Job_JoinDriver {
 }
 
 ```
+
+
+
+## Reference
+
+https://juejin.cn/post/7011365385098231816
+
+https://cloud.tencent.com/developer/article/1431491
+
+https://zhuanlan.zhihu.com/p/482548135

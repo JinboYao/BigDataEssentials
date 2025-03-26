@@ -90,7 +90,7 @@
    - `RDD`创建和转换：Context 会基于输入数据或已有数据集创建 RDD
    - `DAG`构建：Spark根据RDD依赖关系构建DAG，
    - `DAG Scheduler`划分Stage：Spark通过分析DAG将作业划分成多个Stage。每个stage包换了一组可以并行执行的任务集。
-   - `Task Scheduler`任务调度：`DAG Scheduler`根据stage的划分把任务发送到Task Scheduler，`Task Scheduler`把任务调度到不太executors上。
+   - `Task Scheduler`任务调度：`DAG Scheduler`根据stage的划分把任务发送到Task Scheduler，`Task Scheduler`把任务调度到 executors上。
 
 3. **数据分区**
 

@@ -1,106 +1,317 @@
-## SQL题
-
-### 一张device表
-
-| device_id | country uid | extend                          | date_time |
-| --------- | ----------- | ------------------------------- | --------- |
-|           |             | {spu_code click pay_id time pv} |           |
-
-1、当前spu在某些国家下的曝光情况 汇总
-2、14天内某些spu点击 曝光 购买趋势  top10  汇总
-3、当前u_ID 是否活跃用户（连续7天有曝光行为）
+## 行转列
 
 ```sql
-with device2 as(
-select  
-device_id
-,country
-,uid
-,date_time
-,get_json(extend,spu_code) as spu_code
-,get_json(extend,click) as click
-,get_json(extend,pay_id) as pay_id
-,get_json(extend,time) as time
-,get_json(extend,pv) as  pv
-from  device
+SELECT uid,  
+   sum(if(course='语文', score, NULL)) as `语文`,  
+   sum(if(course='数学', score, NULL)) as `数学`, 
+   sum(if(course='英语', score, NULL)) as `英语`,  
+   sum(if(course='物理', score, NULL)) as `物理`,  
+   sum(if(course='化学', score, NULL)) as `化学`  
+FROM scoreLong  
+GROUP BY uid 
+```
+
+## 列转行
+
+```sql
+select uid,语文 as course，score from 表名
+WHERE `语文` IS NOT NULL  
+union
+select uid,数学 as course，score from 表名
+WHERE `数学` IS NOT NULL  
+```
+
+## 开窗
+
+### *合并日期
+
+获取前面的活动最大结束时间，如果比当前的开始时间晚，合并
+
+```sql
+select hall_id,
+	max(end_time) as end_time,
+	min(start_time) as start_time
+from(
+select *, 
+	sum(if(start_time<=max_end,0,1) over(partition by hall_id order by start_time asc,end_time asc) as group_id
+from(
+    select *,
+        max(end_date) over(partition by hall_id order by start_time asc,end_time asc rows between unbounded preceding and 1 preceding) as max_end
+    from table
+    )tt
+)t
+group by hall_id,group_id 
+```
+
+### *最近一笔有效订单
+
+```sql
+with tmp as(
+    select *,
+        case when last_ord is 'First' then ord_id else last_ord end as last_ord_0
+    from(
+        select *,
+        lag(ord_id,1,'First') over(partiton by user_id order by ord_time asc) as last_ord
+        from table
+        where is_valid=1  
+    )t
 )
-1.
-select  country,spu_code,sum(pv)
-from  device2 
-group by country,spu_code
 
-2.
-select spu_code
+select 
+	*
 from(
-select spu_code,
-        rank() over(partition by spu_code order by sum_click) as click_top,
-        rank() over(partition by spu_code order by sum_pv) as pv_top,
-        rank() over(partition by spu_code order by sum_paid) as paid_top,
-from(
-select spu_code,sum(click),sum(pv),sum(paid_id)
-from  device2 
-where date_time>=date_sub(date_time,14)
-group by spu_code
+    select *,
+    	row_number() over(partition by ord_id,user_id order by ord_id asc) as rn
+    from table  a
+    left join tmp b
+    on a.user_id=b.user_id
+    where a.ord_time<=b.ord_time
 )t
-)t2
-where click_top>=10 or pv_top>=10 or paid_top>=10
-
-3.
-select u_id,if(count(time_num)>=7,1,0) as if_create
-from(
-select uid,date_sub(date_time,rn) as time_num
-from(
-    select  date_time,uid,row_number() over(partition by u_id order by date_time) as rn
-    from device2
-)t
-)t2
+where rn=1
 ```
 
-### sql算法
-
-**分析聚类**
-
-已知一张表table_a记录了用户浏览信息,包含字段user_id(用户ID)和page_id(页面ID)以及对应的访问时间，例如
-user_id     page_id     view_time
-0001             A        2025-01-02 10:01:02
-0001             B          2025-01-02 11:02:03
-0002             A        2025-01-01 10:02:03
-0002             A        2025-01-01 10:02:05
-0002             C        2025-01-01 10:03:03
-0002             D        2025-01-01 10:07:03
-
-求出当天连续访问A->B->C页面的用户信息
-
-```
-lead（）获取下一行数据
-```
-
-##### 连续N天登录的用户
+### 最高峰同时直播人数
 
 ```sql
-select 
- id
- ,result_date
- ,count(result_date) as num
+with tmp as(
+select user_id,start_time as time,1 as login_flag
+from table
+union all
+select user_id,end_time as time,-1 as login_flag
+from table
+)
+
+select max(sum) as max_cnt
 from(
-select 
- id
- ,date_sub(date,interval cum day) as result_date
-from(
- select 
-     id
-     ,date(date) as date
-     ,row_number() OVER (PARTITION BY id ORDER BY date(date)) as cum 
-  from test.demo
-  group by id,date(date)  
+    select sum(login_flag) over(order by time asc) as sum
+    from table
 )t
-)t1
-group by id
- ,result_date
-having count(result_date)>=3
 ```
 
-##### 最长的连续登录N天数-可间断
+### *每分钟最大直播人数
+
+用爆炸函数制造每分钟一个time，分组 sum的时候算每分钟
+
+```sql
+with tmp as(
+select user_id,start_time as time,1 as login_flag
+from table
+union all
+select user_id,end_time as time,-1 as login_flag
+from table
+union all
+    0 as user_id,
+    form_unixtime(unix_timestamp('2024-04-29','yyyy-MM-dd')+item*60,'yyyy-MM-dd HH:mm:ss') as time,
+    0 as login_flag
+    from(select posexplode(split(space(24*60),' ') as item,value)t
+)
+
+select max(sum) as max_cnt,date_form(time,'yyyy-MM-DD HH:mm') as action_time
+from(
+    select time,sum(login_flag) over(order by time asc) as sum
+    from tmp
+)t
+group by date_form(time,'yyyy-MM-DD HH:mm')
+```
+
+### 股票波峰波谷
+
+```sql
+select *,
+case when last_close<close and close>next_close then 1 else 0 end as is_up,
+case when last_close>close and close<next_close then 1 else 0 end as is_down,
+from(
+select *,
+	lag(close,1) over(partiton by ts_code order by trade_date asc) as last_close,
+	lead(close,1) over(partiton by ts_code order by trade_date asc) as next_close
+from table
+)
+```
+
+### *累加刚好超过各省GDP40%的地市名称
+
+```sql
+select t1.prov,
+       t1.city
+from t1_gdp t1
+         left join
+     (select prov,
+             city,
+             gdp_amt,
+             total_gpd_amt,
+             ord_sum_gdp_amt,
+             round(gdp_amt / total_gpd_amt, 2)         as city_percnt,
+             round(ord_sum_gdp_amt / total_gpd_amt, 2) as lj_city_percent
+      from (select prov,
+                   city,
+                   gdp_amt,
+                   sum(gdp_amt) over (partition by prov)                      as total_gpd_amt,
+                   sum(gdp_amt) over (partition by prov order by gdp_amt asc) as ord_sum_gdp_amt
+            from t1_gdp) t
+      where round(ord_sum_gdp_amt / total_gpd_amt, 2) < 0.6) tt
+     on t1.prov = tt.prov
+         and t1.city = tt.city
+where tt.city is null
+```
+
+### 连续段起始位置
+
+```sql
+select min(id) as start_id,max(id) as end_id
+from(
+    select id,sum(if(diff=1,0,1)) over(order by id asc) as group_id
+    from(
+        select id,lead(id) over(order by id asc)-id as diff
+        from table
+    )t
+)tt
+group by gourp_id
+```
+
+### 合并连续支付订单
+
+```sql
+select user_id,merchant_id,max(pay_time),min(pay_time),sum(pay_amount)
+from(    
+    select *,
+        sum(if(merchant_id=last_merchant,0,1)) over(partition by user_id order by pay_time asc) as group_id
+    from(
+        select *,
+        lag(merchant_id) over(partition by user_id order by pay_time asc) as last_merchant
+        from table
+    )t
+)tt
+group by user_id,merchant_id,gourp_id
+```
+
+### 连续5天涨幅超过5%的股票
+
+```sql
+with tmp as(
+select *,
+	if(closing_price/lag(closing_price) over(partition by stock_code order by trade_date asc)-1>0.05,1,0) as is_up
+from table
+)
+tmp2 as(
+    select *,
+        row_number() over(partition by stock_code order by trade_date asc)-
+        row_number() over(partition by stock_code,is_up order by trade_date asc) as diff
+)
+
+select stock_code,max(trade_date),min(trade_date),count(1)
+from tmp2
+where flag=1
+group by sotck_code,diff
+haiving count(1)>=5
+```
+
+### 连续登陆超过N天用户
+
+```sql
+select user_id
+from (select user_id,
+             diff,
+             count(1) as login_days
+      from (select user_id,
+                   login_date,
+                   row_number() over (partition by user_id order by login_date asc) -
+                   datediff(from_unixtime(unix_timestamp(login_date, 'yyyyMMdd'), 'yyyy-MM-dd'), '2022-01-01') as diff
+            from t5_login_log) t
+      group by user_id, diff) tt
+where login_days >= 4
+group by user_id
+```
+
+### 连续签到领金币
+
+```sql
+select user_id,month,sum(coin_num) as sum_n
+from(
+    select user_id,month,
+        case when day=3 then 2 
+            when day=7 then 5
+            else 1 end as coin_num
+    from(
+        select user_id,month,
+            if(mod(count(sign_date) over(partition by user_id,month,group_id order by signin_date asc),7)=0,
+               7,
+               mod(count(sign_date) over(partition by user_id,month,group_id order by signin_date asc)) as day
+        from(
+            select month(signin_date) as month,*,
+                sum(if(is_sign=1,0,1)) over(partition by user_id,month order by signin_date asc) as group_id
+            from table
+        )t
+        where is_sign=1
+    )tt
+)ttt
+group by user_id,month
+```
+
+### 品牌营销活动天数(合并日期)
+
+```
+select brand,
+	date_diff(max(end_date),min(start_date)) as diff
+from(
+	select *,sum(if(start_date<=max_end,0,1)) over(partition by brand order by start_date asc,end_date asc) as group_id
+    form(
+        select *,
+            max(end_date) over(partition by brand order by start_date asc,end_date asc rows beetween unbounded proceding and 1 proceding) as max_end 
+        from table
+    )t
+)tt
+group by brand,group_id
+```
+
+### *截止目前登陆用户数及登陆用户列表
+
+```sql
+select log_date,
+       user_cnt,
+       user_list
+from (select log_date,
+             user_id,
+             size(collect_set(user_id) over (order by log_date asc))          as user_cnt,
+             sort_array(collect_set(user_id) over (order by log_date asc)) as user_list
+      from t2_user_login) t
+group by log_date, user_cnt, user_list
+```
+
+### 占据好友封面个数
+
+```sql
+with tmp as(
+    select user_id,friend_id,user_step,friend_step
+    from user_friend a 
+    left join step b on a.user_id=b.user_id
+    left join step c on a.friend_id= c.user_id
+) t
+
+select uesr_id,sum(case when user_id=top_user then 1 esle 0) end as num
+from(
+    select *,
+        first_value(user_id) over(partition by friend_id order by user_step desc) as top_user
+    from tmp
+    where user_step>friend_step
+)t
+group by uesr_id
+```
+
+### 截止目前登陆用户数及登陆用户列表
+
+```sql
+select log_date,
+       user_cnt,
+       user_list
+from (select log_date,
+             user_id,
+             size(collect_set(user_id) over (order by log_date asc))          as user_cnt,
+             sort_array(collect_set(user_id) over (order by log_date asc)) as user_list
+      from t2_user_login) t
+group by log_date, user_cnt, user_list
+```
+
+### 最长的连续登录N天数-可间断
 
 ```sql
 SELECT user_id,
@@ -132,30 +343,190 @@ FROM (
 GROUP BY user_id;
 ```
 
-##### 行转列
+## JOIN
+
+### 两人一定认识的组合数
 
 ```sql
-SELECT uid,  
-   sum(if(course='语文', score, NULL)) as `语文`,  
-   sum(if(course='数学', score, NULL)) as `数学`, 
-   sum(if(course='英语', score, NULL)) as `英语`,  
-   sum(if(course='物理', score, NULL)) as `物理`,  
-   sum(if(course='化学', score, NULL)) as `化学`  
-FROM scoreLong  
-GROUP BY uid 
+with tmp as(
+	select *
+    from table a 
+    join table b
+    on a.bar_id=b.bar_id
+    where a.user_id<b.uer_id
+    and (
+          abs(unix_timestamp(a.login_time, 'yyyy-MM-dd HH:mm:ss') -
+              unix_timestamp(b.login_time, 'yyyy-MM-dd HH:mm:ss')) < 600
+              or
+          abs(unix_timestamp(a.logoff_time, 'yyyy-MM-dd HH:mm:ss') -
+              unix_timestamp(b.logoff_time, 'yyyy-MM-dd HH:mm:ss')) < 600
+          )
+)
+
+select a.user_id,b.user_id,count(a.bar)
+from tmp
+group by a.user_id,b.user_id
 ```
 
-##### 列转行
+### 共同使用ip用户
 
 ```sql
-select uid,语文 as course，score from 表名
-WHERE `语文` IS NOT NULL  
-union
-select uid,数学 as course，score from 表名
-WHERE `数学` IS NOT NULL  
+with table as(
+    select user_id,ip
+    from table
+    group by user_id,ip
+)
+with tmp as(
+    select a.user_id as a,b.user_id as b,ip
+    from table a
+    join table b
+    on a.ip=b.ip 
+    where a.user_id<b.user_id
+)
+select a,b,count(IP)
+from tmp
+group by a,b
+having count(IP)>3
 ```
 
-##### 七日留存
+### 向用户推荐好友喜欢的音乐
+
+```sql
+select a.user_id,concat(',',collect_list(c.music)) as names
+from 用户关注表 a
+left join 用户喜欢的音乐 b on a.follower_id=b.user_id 
+left join 音乐名字表 c on b.music_id=c.music_id
+group by a.user_id
+```
+
+### 受欢迎程度(自排序)
+
+```sql
+with tmp as(
+    select user1_id,user2_id
+    from table
+    union all
+    select user2_id as user1_id,user1_id as user2_id
+    from table
+)
+
+select user1_id,count(user2_id)/count(distinct user1_id) over() as res
+from tmp
+group by user1_id
+```
+
+## Case When 计算
+
+### 用户商品购买收藏行为特征加工
+
+```sql
+select
+    coalesce(t_ord.user_id,t_collect.user_id) as user_id,
+    coalesce(t_ord.goods_id,t_collect.goods_id) as goods_id,
+    if(t_ord.goods_id is not null,1,0) as is_buy,
+    if(t_ord.goods_id is not null and t_collect.goods_id is null,1,0) as buy_not_collect,
+    if(t_ord.goods_id is null and t_collect.goods_id is not null,1,0) as collect_not_buy,
+    if(t_ord.goods_id is not null and t_collect.goods_id is not null,1,0) as buy_and_collect
+from
+    (
+    --订单表数据
+    select
+        user_id,
+        goods_id
+    from t2_order
+    group by
+        user_id,
+        goods_id
+    ) t_ord
+    full join
+    (
+    select
+        user_id,
+        goods_id
+    from t2_collect_log
+    group by
+        user_id,
+        goods_id
+    ) t_collect
+        on t_ord.user_id = t_collect.user_id
+        and t_ord.goods_id = t_collect.goods_id
+```
+
+## 有序拼接
+
+```sql
+select regexp_replace(
+    concat_ws(',',sort_array(collect_list(concat_ws(':',lpad(id,5,0),val)))),
+    '\\d+\:','')
+from table
+```
+
+### 行为路径分析--无法开窗解决
+
+```sql
+with tmp as
+         (select user_id,
+                 dt,
+                 regexp_replace(concat_ws(',', sort_array(collect_list(op_str))),
+                                '(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\|)', '') as op_sort
+          from (select user_id,
+                       op_id,
+                       to_date(op_time)               as dt,
+                       op_time,
+                       concat_ws('|', op_time, op_id) as op_str
+                from t10_act_log) t
+          group by user_id, dt)
+select user_id,
+       dt,
+       op_sort
+from tmp
+where op_sort like '%A%B%D%'
+  and op_sort not like '%A%B%C%D%'
+```
+
+### 用户行为轨迹
+
+```sql
+with tmp as(
+select user_id,station_id,in_time as time
+from table
+where out_time is Null
+union all
+select user_id,station_id,out_time as time
+from table
+where in_time is Null
+union all
+select user_id,market as station_id,check_time as time
+from table2
+)
+
+select 
+```
+
+### 合并数据
+
+```sql
+select max_id
+	concat("|",collect_list(name)) as name,
+from(
+	select *,
+		max(id) over(partition by name) as max_id,
+    	min(id) over (partition by name) as ord_id --按id排序
+	from table
+)t
+group by max_id，ord_id
+
+--- group_id
+select max(id) as id,concat('|',collect_list(name)) as name
+from(
+    select *,
+        row_number() over(partition by name order by id)-id as group_id
+    from table
+)t
+group by group_id
+```
+
+## 留存
 
 ```sql
 select
@@ -182,7 +553,7 @@ left join
 group by a.date
 ```
 
-##### 相互关注
+## 相互关注
 
 ```sql
 select 
@@ -195,67 +566,27 @@ on t1.to_user=t2.from_user
 and t1.from_user=t2.to_uwer
 ```
 
-##### 天/月gmv
-
-要求使用SQL统计出每个用户的累积访问次数
-
 ```sql
-select
-   count,
-   sum(count) over(parition by user_id order by day) as sum_count
-from table
+SELECT
+    from_user,
+    to_user,
+    SUM(1) OVER(PARTITION BY concat_users) AS flag
+FROM
+    (
+        SELECT
+            from_user,
+            to_user,
+            IF(from_user > to_user, 
+               CONCAT(from_user, '-', to_user), 
+               CONCAT(to_user, '-', from_user)) AS concat_users
+        FROM 
+            follow
+    ) t;
 ```
 
-## collect按照顺序拼接
 
-```sql
-select regexp_replace(
-    concat_ws(',',sort_array(collect_list(concat_ws(':',lpad(id,5,0),val)))),
-    '\\d+\:','')
-from table
-```
 
-## 行为路径分析--无法开窗解决
-
-```sql
-with tmp as
-         (select user_id,
-                 dt,
-                 regexp_replace(concat_ws(',', sort_array(collect_list(op_str))),
-                                '(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\|)', '') as op_sort
-          from (select user_id,
-                       op_id,
-                       to_date(op_time)               as dt,
-                       op_time,
-                       concat_ws('|', op_time, op_id) as op_str
-                from t10_act_log) t
-          group by user_id, dt)
-select user_id,
-       dt,
-       op_sort
-from tmp
-where op_sort like '%A%B%D%'
-  and op_sort not like '%A%B%C%D%'
-```
-
-## 连续N天登录
-
-```sql
-with tmp as(
-    select id,login_data 
-    row_number() over(partition by id order by login_date) as rn
-    from table
-)
-
-select id 
-from(
-    select id,login_date,DATE_SUB(login_date,rn) as flag from tmp
-)T
-group by id,flag
-having count(1)>=N
-```
-
-## 连续签到领金币（找出group）
+### 连续签到领金币（找出group）
 
 示例：可以领多少金币
 
@@ -293,7 +624,7 @@ from(
 )t1
 ```
 
-## 连续5天以上未登录的用户及最近一次登录时间(lag函数)
+### 连续5天以上未登录的用户及最近一次登录时间(lag函数)
 
 +---------------------+------------------------+--+
 | user_id  | login_date  |
@@ -890,7 +1221,7 @@ where fail>2
 
 ## 所有考试科目的成绩都大于对应学科平均成绩的学生
 
-```
+```sql
 select sid,
 	count(case when score>avg_score then 1 else null end) as cnt,
 	count(1) as sum
@@ -975,3 +1306,82 @@ WHERE a.user_id < b.user_id;
 ## reference
 
 https://www.dwsql.com/basic/consecutive
+
+
+
+### 一张device表
+
+| device_id | country uid | extend                          | date_time |
+| --------- | ----------- | ------------------------------- | --------- |
+|           |             | {spu_code click pay_id time pv} |           |
+
+1、当前spu在某些国家下的曝光情况 汇总
+2、14天内某些spu点击 曝光 购买趋势  top10  汇总
+3、当前u_ID 是否活跃用户（连续7天有曝光行为）
+
+```sql
+with device2 as(
+select  
+device_id
+,country
+,uid
+,date_time
+,get_json(extend,spu_code) as spu_code
+,get_json(extend,click) as click
+,get_json(extend,pay_id) as pay_id
+,get_json(extend,time) as time
+,get_json(extend,pv) as  pv
+from  device
+)
+1.
+select  country,spu_code,sum(pv)
+from  device2 
+group by country,spu_code
+
+2.
+select spu_code
+from(
+select spu_code,
+        rank() over(partition by spu_code order by sum_click) as click_top,
+        rank() over(partition by spu_code order by sum_pv) as pv_top,
+        rank() over(partition by spu_code order by sum_paid) as paid_top,
+from(
+select spu_code,sum(click),sum(pv),sum(paid_id)
+from  device2 
+where date_time>=date_sub(date_time,14)
+group by spu_code
+)t
+)t2
+where click_top>=10 or pv_top>=10 or paid_top>=10
+
+3.
+select u_id,if(count(time_num)>=7,1,0) as if_create
+from(
+select uid,date_sub(date_time,rn) as time_num
+from(
+    select  date_time,uid,row_number() over(partition by u_id order by date_time) as rn
+    from device2
+)t
+)t2
+```
+
+### sql算法
+
+**分析聚类**
+
+已知一张表table_a记录了用户浏览信息,包含字段user_id(用户ID)和page_id(页面ID)以及对应的访问时间，例如
+user_id     page_id     view_time
+0001             A        2025-01-02 10:01:02
+0001             B          2025-01-02 11:02:03
+0002             A        2025-01-01 10:02:03
+0002             A        2025-01-01 10:02:05
+0002             C        2025-01-01 10:03:03
+0002             D        2025-01-01 10:07:03
+
+求出当天连续访问A->B->C页面的用户信息
+
+```
+lead（）获取下一行数据
+```
+
+##### 

@@ -265,7 +265,7 @@ Reduce端`merge`：  Map端的所有数据进行`归并排序`，将key值进行
 
 对MapTask的输出做一个重复key值的合并操作（{key，[V1,V2]}）,局部汇总减少网络传输。
 
-### Map和Reduce的数量
+### MapTask和ReduceTask的数量
 
 1. map数量：数据切分成的block块数量决定
 
@@ -409,12 +409,14 @@ UDTF
 
 **Map**
 
-* **键值对生成** ：整行数据/指定的字段  作为Key，Value为常量或者空值。
+* **键值对生成** ：`整行数据/指定的字段`  作为Key，Value为常量或者空值。
 * **局部去重** ：可以选择性地进行一个局部聚合过程（Combine过程），仅保留具有相同键的唯一记录。
+
+**Shuffle** 把key相同的值聚集在一起
 
 **Reduce**
 
-* **全局去重** ：尽管局部去重已在Map阶段进行，但最终的去重发生在Reduce阶段。Reducer接收到分组好的键值对后，每个组只需要输出一次键值对（因为相同键的所有值已经在Shuffle阶段被聚集到一起）。
+* **全局去重** ：Reducer接收到分组好的键值对后，每个组只需要输出一次键值对（因为相同键的所有值已经在Shuffle阶段被聚集到一起）。
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/cbdfe1d159f2639b874b6c3d1d968669.png)
 
@@ -706,7 +708,7 @@ public class Job_JoinDriver {
 
 ```
 
-
+### 快排
 
 ## Reference
 

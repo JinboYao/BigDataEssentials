@@ -560,22 +560,67 @@ WHERE id NOT IN (SELECT id FROM table2);
 
 - join的时候没有 where条件 (on)，笛卡尔积 join
 
-## Spark调优
+## Spark性能调优
 
-Shuffle优化
+**数据输入于存储**
 
-Join优化
+- 文件格式 Parquet优于ORC
+- 小文件 用repartition/coalesce合并输出
 
-- 大表JOIN小表：小表声明为broadcast变量。把小表放到每个节点，再放到hash表。JOIN的时候直接查hash不需要shuffle了
+**Spark SQL优化**
+
+- 慎用Select *
+- 谓词下推
+- 减少不必要的collect() ，collect会把数据拉回driver，oom
+
+**Shuffle优化**
+
+- 分区数、
+
+   `spark.sql.shuffle.partitions`
+
+- Spill 过多
+
+  提高内存的buffer
+
+  `spark.reducer.maxSizeInFlight`
+
+- 合并小文件
+
+  `coalesce()`控制partition数量
+
+- Shuffle压缩
+
+  开启压缩参数 `spark.shuffle.compress=true`
+
+**Join优化**
+
+- 大表JOIN小表：小表声明为`broadcast`变量。把小表放到每个节点，再放到hash表。JOIN的时候直接查hash不需要shuffle了
 - 大表JOIN： 通过HASH分区使两个RDD拥有相同的分区
 
-数据倾斜优化
+**数据倾斜优化**
 
 - 倾斜的key就几个情况
 - 提高shuffle并行度
 - 两段聚合
 - 两个数据量都很大的情况
 - join操作的RDD还是有大量key倾斜，加随机前缀大散，再给另一个RDD扩容n倍打上0-n的前缀。
+
+**持久化&缓存优化**
+
+频繁复用的数据要`cache()` / `persist(StorageLevel.MEMORY_AND_DISK)`
+
+不用之后要`unpersist()`释放内存
+
+**参数调优**
+
+`spark.executor.memory`
+
+`spark.executor.cores`
+
+`spark.sql.shuffle.partitions`
+
+`spark.driver.maxResultSize`
 
 ****
 

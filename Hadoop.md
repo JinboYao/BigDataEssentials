@@ -593,17 +593,19 @@ Hive底层依赖MapReduce来执行查询。当查询较复杂时，生成的MapR
 Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合的文件格式（如TextFile）会增加I/O开销，导致查询变慢。使用ORC或Parquet等压缩格式，可以大幅减少存储空间并提高查询性能。
 ```
 
-### HIVE SQL优化
+### ☆HIVE 调优
 
-1、数据探查阶段
+**表设计优化**
 
-- 业务探查：了解热点数据
-- 表建设：合理分区分桶
+- 分区  常用过滤字段做分区
+- 分桶  JOIN/Group by多的字段，支持bucket map join
+- 存储格式 ORC/Parquet 优于txt
+- 小文件 控制小文件（输入前手动合并小文件）
 
-2、数据开发阶段
+**SQL优化**
 
 - 分区裁剪和列裁剪：减少数据范围
-- 大小表关联：map join，
+- 大小表关联：map join
 - 大表关联：设计分桶策略，避免数据倾斜
 - 关联条件统一：字段类型统一，尽量减少笛卡尔积
 - group by 代替dinstinct
@@ -611,11 +613,29 @@ Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合�
 - 避免子查询
 - union all 替代union（去重需要遍历、排序）
 
-3、数据治理阶段：
+**作业执行层优化**
 
-- 无效数据直接删除
-- 少量固定key倾斜，单独做处理后合并
-- key值拼接随机数
+- 合理设置Map/Reduce个数
+
+  `set mapreduce.job.reduces=200;`
+
+- 小文件合并
+
+  `set hive.merge.mapfiles=true;`
+
+- 动态分区
+
+  ```
+  hive.exec.dynamic.partition.mode
+  ```
+
+   `nonstrict` 支持动态分区
+
+**数据倾斜处理**
+
+- 随机前缀
+- Map Join
+- 热点数据单独运行
 
 ## 手撕MapReduce程序
 
@@ -707,8 +727,6 @@ public class Job_JoinDriver {
 }
 
 ```
-
-### 快排
 
 ## Reference
 

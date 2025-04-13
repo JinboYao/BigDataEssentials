@@ -145,7 +145,7 @@ HDFS是主从架构
 
 1、client向namenode发送读请求，namenode收到请求后进行请求路径和用户权限校验。校验完成后返回目标文件的元数据信息，包含datanode位置信息与文件的数据块
 2、客户端根据元数据信息根据网络拓扑原理和就近原则，发送读请求给datanode
-3、datanode收到读请求后，通过HDFS的FSinoutstream将数据读取到本地，然后进行下一个数据块的读取，知道文件的所有block读取完成。
+3、datanode收到读请求后，通过HDFS的FSinoutstream将数据读取到本地，然后进行下一个数据块的读取，直到文件的所有block读取完成。
 
 ### Secondary NN 工作机制
 
@@ -159,17 +159,17 @@ NN在内存中对数据进行增删改
 
 **SNN 工作**
 
-SNN请求执行Checkpoint
+- SNN请求执行Checkpoint
 
-NN滚动正在写的edit日志
+- NN滚动正在写的edit日志
 
-拷贝日志和镜像文件道SNN
+- 拷贝日志和镜像文件到SNN
 
-SNN 把日志和镜像文件放入内存进行合并
+- SNN 把日志和镜像文件放入内存进行合并
 
-生产新的镜像文件fsimage.checkpoint
+- 生产新的镜像文件fsimage.checkpoint
 
-拷贝fsimage.checkpoint到NN，NN重新命名为fsimage
+- 拷贝fsimage.checkpoint到NN，NN重新命名为fsimage
 
 ### 文件管理的容错机制
 
@@ -271,7 +271,7 @@ Reduce端`merge`：  Map端的所有数据进行`归并排序`，将key值进行
 
    ```
    如果需要调整分片大小，可以通过以下参数：
-   mapreduce.input.fileinputformat.split.maxsize：设置最大分片大小。
+   mapred ，uce.input.fileinputformat.split.maxsize：设置最大分片大小。
    mapreduce.input.fileinputformat.split.minsize：设置最小分片大小。
    ```
 

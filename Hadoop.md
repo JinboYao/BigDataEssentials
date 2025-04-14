@@ -483,15 +483,17 @@ SET hive.exec.dynamic.partition.mode=nonstrict;
 | **Parquet**      | 流行的列式存储格式。           | 与多种数据处理工具兼容性好。     | Hive集成程度低于ORC。        |
 | **Avro**         | 支持丰富数据结构的序列化格式。 | 适用于数据交换，支持schema变更。 | 性能可能不如专门的Hive格式。 |
 
-### Sort By，Order By，Cluster By，Distrbute By
+### Sort By，Order By，Cluster By，Distrbute By，Group By
 
-Sort by 全局排序，只有一个reducer
+Order by 全局排序，在一个reducer里面排序
 
-order by 不是全局排序，数据在进入reduce之前完成排序
+Sort by 局部有序，对每一个reduce排序
 
-distrbute by 按照指定的字段对数据进行划分输出到不同的reduce
+Distrbute by 按照指定的字段对数据进行划分输出到不同的reduce
 
-cluster by  数据划分到不同reduce中
+Cluster by  数据划分到不同reduce中，倒叙排序
+
+Group by  根据字段进行分组聚集。
 
 ### Fetch抓取和本地模式
 

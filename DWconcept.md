@@ -351,7 +351,7 @@ DataVault由Hub（关键核心业务实体）、Link（关系）、Satellite（�
 **语法：**
 
 ```sql
-SELECT ROW_NUMBER(COLUMN) OVER(
+SELECT ROW_NUMBER() OVER(
     PARTITION BY COLUMN4 
     ORDER BY COLUMN5
     [ROWS|RANGE BETWEEN A AND B]
@@ -376,9 +376,6 @@ ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING: 包括整个分区的�
 ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING: 从当前行到分区的最后一行。
 
 3、动态调整窗口
-ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING: 包括当前行、前两行和后两行，总共五行，适用于需要考虑邻近数据的情况，如移动平均等。
-
-4、固定行数的窗口
 ROWS BETWEEN 1 PRECEDING AND CURRENT ROW: 这个窗口包括当前行和它之前的一行，用于计算这两行的数据。
 ROWS BETWEEN 3 PRECEDING AND 1 FOLLOWING: 包括当前行、前面三行和后面一行，合计五行数据。
 

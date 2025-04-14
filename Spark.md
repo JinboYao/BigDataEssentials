@@ -226,7 +226,7 @@ persist：允许用户选择存储级别（例如，内存、磁盘或两者的�
 
 repartition 重新分配数据，以改变RDD分区数量。需要全局shuffle。调整并行度，调整数据的分区分布
 
-coalesce  减少RDD的分区数，它尽可能避免进行全局数据洗牌，尽量在本地合并分区，可能会不均匀
+coalesce  会将多个小分区合并为一个大分区，减少RDD数量
 
 #### map、flatMap
 
@@ -240,15 +240,17 @@ flatMap 与 `map` 类似，但每个输入元素可以映射到0或多个输出�
 
 RDD：容错的、不可变的分布式数据集合
 
-DataFrame：在RDD基础之上的高级抽象。数据表格形式组长
+DataFrame：在RDD基础之上，记录了数据结构。数据表格形式组成
 
-DataSet：是 DataFrame API 的一个扩展
+DataSet：是 DataFrame API 的一个扩展，存储了数据结构+字段类型+严格的错误检查
 
 ## Spark Shuffle
 
 Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`groupByKey`、`join` 等）时，需要跨分区传输数据的过程。这通常涉及到在不同节点之间交换数据，以确保相同的键（key）聚集在一起进行计算。
 
 ### Hash Shuffle
+
+![img](https://ask.qcloudimg.com/http-save/yehe-2039230/8852487da9ed55cffc637ae65ab62b47.png)
 
 - **Map阶段**
 
@@ -278,6 +280,8 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
 
 ### Sort Shuffle
 
+![img](https://ask.qcloudimg.com/http-save/yehe-2039230/3a2d37c338fd287135746a6aca23718c.png)
+
 - **Map阶段**
   - 数据写入内存数据结构：根据Shuffle算子，数据写入不同数据结构
     - 聚合操作(ReduceByKey)：Map结构，允许在写入数据时聚合
@@ -285,10 +289,11 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
   - **内存缓冲**：每写入一条数据到内存数据结构，判断是否到达阈值。如果到达阈值，就把内存数据结构的数据溢写到磁盘，再清空内存数据结构。
   
 - **Shuffle**
+  
   - **排序、分批溢写**：**溢写到磁盘之前，先根据key进行排序**。再以每批1万条数据形式分批写入
   - **合并磁盘文件：** 所有任务完成后，合并磁盘文件
   - **创建索引：** 根据下一个task 创建索引记录数据段的位置
-
+  
 - **Reduce阶段**
 
   根据索引获得数据，聚合、排序等处理
@@ -622,7 +627,51 @@ WHERE id NOT IN (SELECT id FROM table2);
 
 `spark.driver.maxResultSize`
 
-****
+## Spark内存模型
+
+![img](https://github.com/MoRan1607/BigDataGuide/raw/master/Spark/%E9%9D%A2%E8%AF%95%E9%A2%98/Spark%E7%9A%84%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/202304081142714.png)
+
+**堆内内存(Executor)**
+
+JVM内存
+
+- execution：计算过程中临时数据，例如 shuffle，join，sort
+
+- storage：缓存数据，例如RDD缓存，广播等
+
+- 用户内存：定义的变量和对象等
+
+- 预留内存：防止OOM，默认300M
+
+  ```
+  –executor-memory 或 spark.executor.memory 设置
+  Executor中Task共享JVM内存，当这些任务缓存在RDD或者广播时数据占用的内存被划分为storage内存，在执行shuffle操作时数据占用的内存被划分为execution内存
+  ```
+
+**堆外内存**
+
+把内存对象分配在JVM的堆以外的内存
+
+```
+系统内存，开启需要参数
+spark.memory.offHeap.enabled=true
+spark.memory.offHeap.size=512m
+```
+
+**动态占用机制**
+
+Storage内存和Execution内存共享内存。
+
+```
+spark.memory.fraction = 0.6   Executor 内存中用于 **统一内存池** 的比例
+spark.memory.storageFraction = 0.5  统一内存池中分配给 Storage 的初始比例，剩下的是 Execution
+```
+
+`Execution 优先级高，Storage 优先级低`。Execution 可以抢回空间，Storage 不行。
+
+- 双方的空间都不足时，则存储到硬盘；若己方空间不足而对方空余时，可借用对方的空间;
+- Execution 的内存空间被 Storage 占了： Storage **把缓存数据写到磁盘（落盘）**，释放内存归还给Execution
+- Storage 的内存空间被Execution 占了：无法抢占回来
 
 ### SPARK Architecture
 

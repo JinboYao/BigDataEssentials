@@ -204,10 +204,6 @@ Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血
 
 ![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171650540-1125656506.png)
 
-### Mapper和Reducer相当于什么算子
-
-Map() 和 reduceByKey()
-
 ### 算子的区别
 
 #### groupByKey、reduceByKey、aggreageByKey
@@ -248,7 +244,7 @@ DataSet：是 DataFrame API 的一个扩展，存储了数据结构+字段类型
 
 Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`groupByKey`、`join` 等）时，需要跨分区传输数据的过程。这通常涉及到在不同节点之间交换数据，以确保相同的键（key）聚集在一起进行计算。
 
-### Hash Shuffle
+**Hash Shuffle**
 
 ![img](https://ask.qcloudimg.com/http-save/yehe-2039230/8852487da9ed55cffc637ae65ab62b47.png)
 
@@ -278,7 +274,7 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
 缓冲区阶段，Task复用Buffer缓冲区。不需要为executor每一个task都创建buffer
 ```
 
-### Sort Shuffle
+**Sort Shuffle**
 
 ![img](https://ask.qcloudimg.com/http-save/yehe-2039230/3a2d37c338fd287135746a6aca23718c.png)
 

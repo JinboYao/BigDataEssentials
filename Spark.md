@@ -421,16 +421,6 @@ GC问题：
 
 **节点容错：主从架构**。主节点（Driver）协调任务执行，如果挂了，可以重启一个新的主节点容错
 
-## Parquet文件存储
-
-列式存储，把同一列的数据存储在一起。查询时只需要读取需要的列
-
-同一列的数据存储在一起，有利于压缩算法和编码。减少存储空间降低磁盘IO
-
-支持多种压缩算法和编码方式
-
-存储了数据的模式信息，列名、数据类型等。Spark在查询时可以自动推断数据的模式
-
 ## Spark加载大数据量会不会失败
 
 1. 内存溢出（OOM）
@@ -565,6 +555,10 @@ WHERE id NOT IN (SELECT id FROM table2);
 
 - join的时候没有 where条件 (on)，笛卡尔积 join
 
+## Spark小文件问题
+
+
+
 ## Spark性能调优
 
 **数据输入于存储**
@@ -672,52 +666,6 @@ spark.memory.storageFraction = 0.5  统一内存池中分配给 Storage 的初�
 - 双方的空间都不足时，则存储到硬盘；若己方空间不足而对方空余时，可借用对方的空间;
 - Execution 的内存空间被 Storage 占了： Storage **把缓存数据写到磁盘（落盘）**，释放内存归还给Execution
 - Storage 的内存空间被Execution 占了：无法抢占回来
-
-### SPARK Architecture
-
-![image.png](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/a66bb7a6aaba462097ea327f0c6eacff~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp?)
-
-#### Spark 核心组件
-
-![img](https://static001.geekbang.org/infoq/37/37ffe974627175391384fcf34dbccc35.png)
-
-#### 各部分功能
-
-![img](https://static001.geekbang.org/infoq/9f/9fdc3427eaf284a2b6d3e439ada9dbdd.png)
-
-- Driver注册了一些Executor之后，可以正式执行Spark应用程序。第一步创建RDD，读取数据源
-- HDFS文件被读取到多个Worker节点，形成内存中的分布式数据集，也就是初始RDD
-- Driver对RDD的定义的操作，提交Task到Executor
-- Task对RDD的partiiton数据执行指定的算子操作，形成新的RDD的partiton
-
-## spark 架构运行的特点
-
-- 每个application 获取专属的executer进程，该进程在application期间一直驻留以多线程方式运行task
-- Spark与资源管理器无关，只有能够获取executor进程
-- 提交SparkContext的Client应该靠近Worker节点。因为Spark Application运行过程中SparkContext和Executor之间有大量的信息交换；如果想在远程集群中运行，最好使用RPC将SparkContext提交给集群，不要远离Worker运行SparkContext。
-
-## Spark作业提交流程
-
-1. **运行环境构建**
-   - 客户端提交Spark任务（Spark SQL通过抽象语法树解析、生成逻辑计划、 查询优化器优化、生成物理计划），**Driver创建一个Context对象，负责与Cluster Manager(资源管理器) 通信以及资源申请、任务分配和监控。**
-   - **Content向资源管理器注册申请运行Executor进程** Executor运行情况随着心跳发送到资源管理器上。SparkContext 可以看成是应用程序连接集群的通道.
-   - **RDD 创建**：在任务提交的初期，Context 会基于输入数据或已有数据集创建 RDD
-2. **资源管理器为Executor分配资源，启动Executor进程**
-   - Executor运行情况将随着心跳发送到资源管理器上。一个Executor进程又很多Task线程，Task对应RDD的操作
-   - **RDD 分区**：RDD 被分割成多个分区，并且这些分区被分配给不同的 Executor。
-3. Spark content 根据RDD 依赖关系构建DAG图
-   - DAG图交给DAG 调度器（**DAGScheduler**）进行解析。DAG调度器分解成多个阶段 `Stage`（任务集），计算出各个阶段的依赖关系。
-   - 把任务集交给底层的任务调度器（**TaskScheduler**）进行处理。Executor向Context申请任务（`Task`）
-   - **RDD 的血统信息（lineage）**：DAGScheduler 会根据 RDD 之间的依赖关系生成 RDD 的血统信息，用来追踪每个 RDD 的转换历史。这样，即使某个 Task 失败了，Spark 也能通过血统信息重新计算丢失的分区。
-4. 任务调度器（**TaskScheduler**）将任务分发给 Executor 运行，同时，SparkContext 将应用程序代码发放给 Executor。
-   - **RDD 执行过程**：当任务分配到 Executor 时，Executor 会开始执行与 RDD 相关的操作。例如，`map` 或 `filter` 等操作将在 Executor 内部针对 RDD 的分区并行执行。
-   - **数据传输与 Shuffle**：如果需要跨分区进行数据聚合（如 `reduceByKey`），Executor 会进行数据的 Shuffle 操作。
-5. 任务在Executor运行，完成后写入数据在存储然后释放所有资源.
-   - **RDD 计算**：Executor 执行任务并计算 RDD。
-   - **持久化和缓存**：如果 RDD 被持久化（`persist` 或 `cache`）或中间结果需要被复用，Executor 会将计算结果存储在内存中，避免重复计算。
-   - **完成任务后释放资源**：任务完成后，Executor 将结果写入外部存储系统（如 HDFS、S3 等）。随后，Executor 会通过心跳向资源管理器报告任务执行状态。如果没有更多任务，Executor 会释放资源。
-
-![img](https://images2018.cnblogs.com/blog/1228818/201804/1228818-20180425172026316-1086206534.png)
 
 ## Reference
 

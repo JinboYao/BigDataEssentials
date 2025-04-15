@@ -15,10 +15,6 @@
 
 ![img](https://raw.githubusercontent.com/winway/picRepo/master/pics/20220513104722.png)
 
-**离线大数据架构**
-
-![img](https://raw.githubusercontent.com/winway/picRepo/master/pics/532288-20210126201125249-1962605607.png)
-
 ## 数仓建模
 
 | 层级                           | 建设思路                                                     | 作用                                                         | 设计原理                                                     | 数据处理                                                 | 表类型                                               |

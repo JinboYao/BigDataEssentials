@@ -553,7 +553,16 @@ WHERE id NOT IN (SELECT id FROM table2);
 
 ## Spark小文件问题
 
+1、coalesce()或 repartition() 减少分区
 
+```
+val rdd2 = rdd1.coalesce(8, shuffle = true)
+val rdd3 = rdd1.repartition(8)
+```
+
+2、调整 `spark.sql.shuffle.partitions`
+
+设置shuffle之后的分区数，只对宽依赖有效
 
 ## Spark性能调优
 

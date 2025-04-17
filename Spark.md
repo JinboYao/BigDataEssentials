@@ -1,20 +1,36 @@
-## Spark vs MR 组件
+Spark vs MR 组件
 
 ![image.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e0c96476a819418686b9b46baf7951c7~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
-## Spark和MR并行计算
+## Spark和MR并行计算对比
+
+MapReduce 是阶段式、磁盘驱动的粗粒度并行计算；Spark 是内存驱动、流水线式的细粒度并行计算
+
+|                                        | MapReduce                                                 | Spark                                           |
+| -------------------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
+| 执行模型                               | 两阶段模型(Map-Shuffle-Reduce)                            | DAG图执行模型（划分stage）                      |
+| 任务并行粒度                           | MapTask数量(Block块)<br />ReduceTask数量(setReduceNumber) | RDD Partition(一个partition对应一个Task)        |
+| 执行并行度<br />(分批运行任务并行粒度) | 可同时跑的 Task 数（YARN container）                      | Executor 数 × 每个 Executor 的 core 数          |
+| 任务调度                               | 每个Task启动独立的JVM                                     | Executor启动一次JVM, 多个task在Executor并行运行 |
+| 执行机制                               | 每次Job提交立即执行                                       | 懒执行(遇到Action才执行)                        |
+| 中间结果(**内存使用**)                 | 中间结果必须落盘                                          | 默认内存，必要时落盘(Shuffle)                   |
+| IO性能                                 | IO 瓶颈明显，磁盘频繁读写                                 | 内存驱动，延迟低，性能高                        |
+| 缓存                                   |                                                           | 支持 RDD 缓存、广播变量                         |
 
 - 并行计算
 
-  MR：MR的一个作业称为Job，Job 分为map task和reduce task。每个task在自己的进程中运行。
+  MR：一个任务划分成Map和Reduce阶段，一个Task启动独立的JVM执行task。基于磁盘刷写
 
-  Spark：Spark把任务成为application，一个application对应一个spark content，每触发一次action就会产生一个job。application中存在多个job，每个job有很多stage（stage是shuffle中DGASchaduler通过RDD间的依赖关系划分job而来的）每个stage里有多个task（taskset）。taskset由taskshedulaer分发到各个executor中执行。
+  Spark： 基于内存驱动计算
   
-- 内存使用
-
-  MR过程中重复读写HDFS，大量IO操作
-
-  Spark二点迭代计算在内存中进行，API提供了大量RDD操作（join，group by），DAG图实现良好容错性
+  **创建执行计划(懒执行)**
+  
+  - 用户提交spark代码后，Driver创建一个Context对象(进程)，跟资源管理器申请Executor，创建RDD。
+  - 遇到`Action`算子创建DAG无向图，发送给DAG scheduler划分stage和task
+  
+  **Executor并行运行**
+  
+  - `Executor`执行Task Scheduler分配的task，执行并行度是Executor 数 × 每个 Executor 的 core 数
 
 ## Spark SQL 为什么比 HIVE 快
 
@@ -50,46 +66,95 @@
 
    MR默认使用文本格式，传输和解析开销大
 
+## Sprak和MR的Shuffle的区别
+
+**MR的shuffle**
+
+- Map端shuffle：分区，放入环形缓冲区，排序，Spill溢出，合并几个阶段
+
+- Reduce端shuffle：复制，合并，排序几个阶段
+
+**问题：**MR在map端进行一次排序，在reduce端对map的结果会进行一次排序。最后多个溢写文件在最后merge成一个输出文件的时候还会排序一次。MR 的全局排序消耗资源较大
+
+**Spark的shuffle**
+
+- 基于Hash的shuffle
+
+  Mapper根据Reduce数量创建相应的bucket，Mapper的结果`分区`到bucket
+
+  Reduce启动的时候，从内存或者磁盘拉取相应的bucket
+
+  Spark在Reduce端做聚合，不需要合并和排序。聚合是hashmap，将shuffle读取的key值插入到hashmap
+
+  **问题：** 创建Map*Reduce个小文件。I/O开销和缓存开销大
+
+- 基于sort的shuffle
+
+  Mapper先把数据写入内存数据结构。聚合类使用map数据结构，边聚合边写入；非聚合类(join)使用array数据结构直接写入内存
+
+  内存数据到达某个阈值就会溢写到磁盘，溢写之前，对key排序再分批写入
+
+  多次磁盘溢写会有多个文件，最终合并成一个大数据文件和一个索引文件
+
+## Spark是否可以完全取代Hadoop
+
+**稳定性**
+
+- **内存管理：** Spark依赖于内存存储中间数据。大量数据缓存在 RAM 中可能导致 Java 垃圾回收（GC）问题
+
+```
+GC问题：
+* 频繁的垃圾回收：大量缓存在内存中，新生代和老年代就有可能很快被填满，JVM就需要频繁的垃圾回收，GC期间，大部分用户线程需要暂停等待
+* 内存溢出： 垃圾回收无法有效释放足够的内存空间来满足新对象的分配需求，JVM 最终会内存溢出
+```
+
+- **代码质量处理：** 基于线程的task 资源隔离没有保证，代码执行过程复杂
+
+**数据处理能力**
+
+- **大数据集限制**：超过 RAM 大小的数据集，Spark 可能会遇到内存不足的问题，这在单个节点上尤为明显。如果内存不足，还是有磁盘I/O
+
 ## SPARK 架构
 
 ![img](https://uploadfiles.nowcoder.com/files/20240320/261038666_1710946095702/.jpg)
 
-主从架构，一个Master(Driver)和若干woker
+**Spark主从架构，一个Master(Driver)和若干woker(Executor)**
 
-- Driver：资源申请，任务分配，SparkContext主导应用执行
+- Driver：
+  - 用户提交spark代码后，Driver创建一个Context对象(进程)，跟资源管理器申请Executor。
+  - 用户提交spark代码后，把代码转换成逻辑计划，DAG无向图。发送给DAG scheduler
+
 - Cluster Manager ：节点管理器，把算子RDD发送给Worker Node
-- Executor：一个JVM进程，用于计算，接任务Task
-- Driver：资源申请，任务分配
-- Cluster Manager
-- Executor：一个JVM进程，用于计算
-
+- Executor：一个JVM进程，用于计算任务Task
 - HDFS,HBASE：存储数据
 
-## Applicaiton、Job、Stage、Task之间的关系
+**Applicaiton、Job、Stage、Task之间的关系**
+
+- Application 用户提交的一个完整 Spark 程序。`spark—submit xxx.py`
+- Job   
+  - 每调用一次 Action(结果返回存储系统)，就触发一个 Job
+  - **流程：** `Transformation`算子懒执行，当遇到`Action`算子。Driver会：
+    - 从当前RDD往上构建DAG
+    - 然后根据shuffle划分Stage
+    - 把这整个过程算一个job。然后遇到下一个action，执行下一个job
+- stage  由 Job 中的 DAG 图被划分成几段 Stage 来决定数量，一个宽依赖划分一次stage
+- task  由RDD分区数量决定，在stage中并行执行，真正运行在 Executor 上的最小单位
 
 ![Application组成](https://i-blog.csdnimg.cn/blog_migrate/54b32b3de899f513f172d2e14ff56d93.png)
-
-`applicaiton` 完整的Spark应用程序
-
-`job`一个Applicaiton会调用多个Job，Job间串行执行
-
-`stage`DAG scheduler划分Stage，会把Job作业划分成多个stage。依据是shuffle依赖。一个Stage包含很多task，依据是最后一个分区数。
-
-`task` 并行执行，负责对一个分区进行计算操作
 
 ## Spark 工作机制
 
 1. **构建运行环境** 
 
-   - Client提交Spark任务，Driver创建一个Context对象，负责与Cluster Manager通信以及资源申请、任务分配和监控。
+   - 用户提交的一个完整 Spark 程序，`spark—submit main.py`
+   - Driver创建一个Context对象，负责跟资源管理器申请Executor。
+   - Context注册Executor：**Content向资源管理器注册申请运行Executor进程**，Executor等待task，Executor运行情况随着心跳发送到资源管理器上。
 
-   - Executor注册：**Content向资源管理器注册申请运行Executor进程**，Executor运行情况随着心跳发送到资源管理器上。
-
-2. **任务划分和任务调度**
+2. **SparkContext构建DAG图(有向无环图)、划分`stage`并分配taskset至Executor**
 
    - `RDD`创建和转换：Context 会基于输入数据或已有数据集创建 RDD
-   - `DAG`构建：Spark根据RDD依赖关系构建DAG，
-   - `DAG Scheduler`划分Stage：Spark通过分析DAG将作业划分成多个Stage。每个stage包换了一组可以并行执行的任务集。
+   - `DAG`构建：Spark根据RDD依赖关系构建DAG
+   - `DAG Scheduler`划分Stage：分析DAG将作业划分成多个Stage。每个stage包换了一组可以并行执行的任务集。
    - `Task Scheduler`任务调度：`DAG Scheduler`根据stage的划分把任务发送到Task Scheduler，`Task Scheduler`把任务调度到 executors上。
 
 3. **数据分区**
@@ -98,7 +163,7 @@
 
 4. **任务执行**
 
-   `Executor`执行Task Scheduler分配的任务
+   `Executor`执行Task Scheduler分配的任务，并行度由core决定
 
    - 一个`Executor`进程有很多Task线程，Task对应RDD的操作
 
@@ -143,18 +208,18 @@ Spark中，**partition** 是RDD的最小单元。partition是逻辑处理单位
 
 ![f738dbe3df690bc0ba8f580a3e2d1112](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e5caa08f11304397a3a1164f5e74c739~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
-RDD分布式弹性数据集本身不存储数据，作为数据访问的一种虚拟结构。所有算子都基于RDD执行，`不可变，可分区，里面的元素可以并行计算`。RDD执行过程中会生成DAG图。 （物理角度看RDD存储的是block和node之间的映射）
+RDD分布式弹性数据集本身不存储数据，作为数据访问的一种虚拟结构（物理角度看RDD存储的是block和node之间的映射）。所有算子都基于RDD执行，`不可变，可分区，里面的元素可以并行计算`。 
 
 - 弹性：数据可以保存在内存或者磁盘，数据优先内存存储，计算节点内存不够时可以把数据刷到磁盘等外部存储。
 - 分布式：对内部的元素进行分布式存储。RDD本质可以看成只读的，可分区的分布式数据集。
 - 数据集：一个RDD就是一个分布式对象集合，本质上是一个只读的分区记录集合
-- 容错性：RDD 的 `血脉机制`保存RDD的依赖关系。Checkpoint机制当RDD结构更新或者数据丢失时对RDD进行重建
 
 特性：
 
-- RDD有一组分片，即数据集的基本组成单位。
-- 每个分片都会被一个计算任务处理，并且决定并行计算的粒度
-- RDD直接存储依赖关系
+- 分布式内存：RDDs是存储在分布式内存中的，可以在集群的多个节点上并行计算
+- 不可变性：RDDs是不可变的数据结构，它们的数据只能通过转换操作创建
+- 容错性：RDDs具有容错性， `血脉机制`保存RDD的依赖关系
+- 懒加载：RDDs是惰性计算
 
 ### RDD算子
 
@@ -190,19 +255,13 @@ Action（执行）算子。
 
 ### Spark宽窄依赖&血缘
 
-窄依赖和宽依赖
-
-Spark中RDD的 `血脉机制`，当RDD数据丢失时，可以根据记录的血脉依赖关系重新计算，DAG调度中的stage，划分的依据也是RDD的依赖关系
-
 **宽依赖：** 每个子RDD分区依赖父RDD的全部分区
-
-![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171657817-1513169131.png)
 
 **窄依赖：** 每个子RDD依赖父RDD的同一个分区
 
 窄依赖允许子RDD的每个分区可以被并行处理，而且支持在一个节点上链式执行多条指令，无需等待其他父RDD的分区操作
 
-![img](https://img2022.cnblogs.com/blog/1601821/202204/1601821-20220416171650540-1125656506.png)
+![img](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/5d8b5924f4654875b9bd589450a3f43a~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
 ### 算子的区别
 
@@ -298,54 +357,6 @@ Spark Shuffle 是指当 Spark 执行**宽依赖**操作（如 `reduceByKey`、`g
 Bypass SortShuffle
 当数据量比较小的时候，Shuffle输出的分区较少，跳过排序过程，直接溢写
 ```
-
-## Sprak和MR的Shuffle的区别
-
-**MR的shuffle**
-
-- Map端shuffle：分区，放入环形缓冲区，排序，Spill溢出，合并几个阶段
-
-- Reduce端shuffle：复制，合并，排序几个阶段
-
-**问题：**MR在map端进行一次排序，在reduce端对map的结果会进行一次排序。最后多个溢写文件在最后merge成一个输出文件的时候还会排序一次。MR 的全局排序消耗资源较大
-
-**Spark的shuffle**
-
-- 基于Hash的shuffle
-
-  Mapper根据Reduce数量创建相应的bucket，Mapper的结果`分区`到bucket
-
-  Reduce启动的时候，从内存或者磁盘拉取相应的bucket
-
-  Spark在Reduce端做聚合，不需要合并和排序。聚合是hashmap，将shuffle读取的key值插入到hashmap
-
-  **问题：** 创建Map*Reduce个小文件。I/O开销和缓存开销大
-
-- 基于sort的shuffle
-
-  Mapper先把数据写入内存数据结构。聚合类使用map数据结构，边聚合边写入；非聚合类(join)使用array数据结构直接写入内存
-
-  内存数据到达某个阈值就会溢写到磁盘，溢写之前，对key排序再分批写入
-
-  多次磁盘溢写会有多个文件，最终合并成一个大数据文件和一个索引文件
-
-## Spark是否可以完全取代Hadoop
-
-**稳定性**
-
-- **内存管理：** Spark依赖于内存存储中间数据。大量数据缓存在 RAM 中可能导致 Java 垃圾回收（GC）问题
-
-```
-GC问题：
-* 频繁的垃圾回收：大量缓存在内存中，新生代和老年代就有可能很快被填满，JVM就需要频繁的垃圾回收，GC期间，大部分用户线程需要暂停等待
-* 内存溢出： 垃圾回收无法有效释放足够的内存空间来满足新对象的分配需求，JVM 最终会内存溢出
-```
-
-- **代码质量处理：** 基于线程的task 资源隔离没有保证，代码执行过程复杂
-
-**数据处理能力**
-
-- **大数据集限制**：超过 RAM 大小的数据集，Spark 可能会遇到内存不足的问题，这在单个节点上尤为明显。如果内存不足，还是有磁盘I/O
 
 ## Spark 数据倾斜
 
@@ -680,3 +691,5 @@ https://juejin.cn/post/7052321931625758757?searchId=20240506161817447254DE1438E4
 https://www.cnblogs.com/liugp/p/16122904.html
 
 https://xie.infoq.cn/article/71e6677d03b59ce7aa5eec22a
+
+![c954b8ee79ab4bec9f5cb396d640193c.png](https://ucc.alicdn.com/pic/developer-ecology/o46gtualwok5w_9be992bb23ad4e9ab6160930dffd656d.png?x-oss-process=image%2Fresize%2Cw_1400%2Fformat%2Cwebp)

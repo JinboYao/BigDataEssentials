@@ -1,5 +1,3 @@
-Spark vs MR 组件
-
 ![image.png](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e0c96476a819418686b9b46baf7951c7~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
 ## Spark和MR并行计算对比
@@ -177,6 +175,10 @@ GC问题：
 
    ​	`RDD 的血统信息（lineage）` 提供容错能力，任何节点失败可以重新计算
 
+## Spark yarn
+
+
+
 ## Spark SQL解析流程
 
 1. 输入SQL
@@ -265,11 +267,12 @@ Action（执行）算子。
 
 ### 算子的区别
 
-#### groupByKey、reduceByKey、aggreageByKey
+#### groupByKey、reduceByKey、aggreageByKey、combineByKey 
 
 - groupByKey  对数据集中的元素按键分组，但不进行任何聚合计算。它会生成一个（键，值序列）的数据集。
-- reduceByKey 按键合并数据集的值。对partition中数据根据不同key进行aggregate，再shuffle
+- reduceByKey  按键合并数据集的值。分区内先聚合，再shuffle
 - aggreageByKey 
+- combineByKey 
 
 #### cache、presist
 
@@ -454,7 +457,9 @@ Bypass SortShuffle
 
    Spark加载外部存储系统时导致I/O 性能瓶颈
 
-## Spark的持久化(persist&缓存机制(cache)
+## 广播变量和累加器
+
+## Spark的持久化&缓存机制
 
 **持久化**
 

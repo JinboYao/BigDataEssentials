@@ -177,7 +177,38 @@ GC问题：
 
 ## Spark yarn
 
+1. **提交作业（spark-submit）**
 
+2. YARN 启动一个**ApplicationMater**，向Executor申请Container
+
+3. Driver负责 调度任务，收集结果
+
+   ```sql
+   --deploy-mode 选择部署模式
+   ```
+
+## Spark Client vs Cluster 
+
+**Spark Client**
+
+Driver运行在提交命令的机器上，Driver掉线任务会直接失败 。
+
+- 任务提交，submit
+- 本地机器会开启driver进程,进行任务划分，资源申请
+- Spark Yarn Client向YARN的ResourceManager申请启动Application Master，ResourceManager收到请求后，在集群中选择一个NodeManager，为该应用程序分配第一个Container，要求它在这个Container中启动应用程序的ApplicationMaster
+
+
+
+![img](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/e5f2d3bcf60040fc8d8b468070850475~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
+
+**Spark Cluster**
+
+Driver被分配到群集的container中，提交任务的终端掉了，Driver的container会继续工作
+
+- 先把Driver作为ApplicationMaster在YARN集群启动
+- ApplicationMaster创建应用程序，向资源管理器申请资源，启动executor执行task
+
+![img](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/38f0602454b14d04bdd3b8b532dd5cf5~tplv-k3u1fbpfcp-zoom-in-crop-mark:1512:0:0:0.awebp)
 
 ## Spark SQL解析流程
 
@@ -271,20 +302,34 @@ Action（执行）算子。
 
 - groupByKey  对数据集中的元素按键分组，但不进行任何聚合计算。它会生成一个（键，值序列）的数据集。
 - reduceByKey  按键合并数据集的值。分区内先聚合，再shuffle
-- aggreageByKey 
-- combineByKey 
+- combineByKey  先在本地进行规约计算，再到下一个节点聚合。给每个key一个累加器存储想要的数据结构(例如，value的值)，再聚合。
+- aggreageByKey  分区内聚合+分区间相同的key聚合。 累加器必须初始化，不能变化
 
 #### cache、presist
 
 cache：默认将数据集存储在内存中
 
-persist：允许用户选择存储级别（例如，内存、磁盘或两者的组合）。
+```scale
+调用 persist(StorageLevel.MEMORY_ONLY)
+```
+
+persist：允许用户选择存储级别（例如，内存、磁盘或两者的组合）。默认为Momory
 
 #### repartition、coalesce
 
-repartition 重新分配数据，以改变RDD分区数量。需要全局shuffle。调整并行度，调整数据的分区分布
+repartition 重新分配数据，以改变RDD分区数量。一定会**全局shuffle**。调整并行度，调整数据的分区分布
+
+```sql
+调用了coalesce(..., shuffle = true) 
+构建新的分区ShuffledRDD，指定新的分区器（比如 HashPartitioner），将原数据重新划分到目标分区数中。
+```
 
 coalesce  会将多个小分区合并为一个大分区，减少RDD数量
+
+```sql
+shuffle = false
+把多个原分区合并为一个逻辑分区，不shuffle
+```
 
 #### map、flatMap
 
@@ -458,6 +503,17 @@ Bypass SortShuffle
    Spark加载外部存储系统时导致I/O 性能瓶颈
 
 ## 广播变量和累加器
+
+**广播变量**
+
+- 问题： task需要使用变量的时候，频繁拉取driver的变量。如果大便量，复制开销大
+- 作用：数据从Driver发送到所有的Executor，存储一份备份。Executor的task共享变量。
+
+**累加器**
+
+- 作用：Driver端进行全局汇总的计算需求。
+  - Driver端定义且赋初始值给累加器
+  - Executor更新，最终在Driver端读取最后的汇总值
 
 ## Spark的持久化&缓存机制
 

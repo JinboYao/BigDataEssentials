@@ -982,14 +982,6 @@ select
 group by group_id,hall_id
 ```
 
-## 查询最近一笔有效订单
-
-```sql
-
-```
-
-
-
 ## 共同使用ip用户
 
 ```sql
@@ -1301,7 +1293,142 @@ JOIN exploded b ON a.follower_id = b.user_id AND b.follower_id = a.user_id
 WHERE a.user_id < b.user_id;
 ```
 
+## N指标--累计去重
 
+```
+-- table
+time_id          user_id
+2018-01-01 10:00:00    001
+2018-01-01 11:03:00    002
+2018-01-01 13:18:00    001
+2018-01-02 08:34:00    004
+2018-01-02 10:08:00    002
+2018-01-02 10:40:00    003
+2018-01-02 14:21:00    002
+2018-01-02 15:39:00    004
+2018-01-03 08:34:00    005
+2018-01-03 10:08:00    003
+2018-01-03 10:40:00    001
+2018-01-03 14:21:00    005
+```
+
+```
+日期       当日活跃人数     月累计活跃人数_截至当日
+date_id   user_cnt_act    user_cnt_act_month
+2018-01-01      2                2
+2018-01-02      3                4
+2018-01-03      3                5
+```
+
+SQL实现
+
+```sql
+-- 去重
+with t0 as(
+    SELECT
+        DATE(time_id) AS date_id,
+        user_id
+    FROM table
+    GROUP BY DATE(time_id), user_id
+)
+-- 计算 当日活跃人数
+,t1 as(
+    select 
+    	count(user_id) as user_cnt_act,
+    	date_id
+    from t0
+    group by date_id
+)
+-- 计算 月累计活跃人数_截至当日
+,t2 as(
+    select
+    	a.date_id,
+    	count(distinct user_id) as user_cnt_act_month
+    from t0 as a
+    join t0 as b
+    on date_format(a.date_id,'yyyy-MM')=date_format(a.date_id,'yyyy-MM')
+    and a.date_id>=b.date_id
+    group by a.date_id
+)
+select 
+	t2.date_id,
+	t2.user_cnt_act_month,
+	t1.user_cnt_act
+from t2
+join t1
+on t2.date_id=t1.date_id
+order by t2.date_id
+```
+
+## 非等值连接--最近匹配
+
+笛卡尔积
+
+a表和b表join实现：
+
+```
+a    b
+1    2
+2    2
+4    3
+5    3
+5    7
+8    7
+10   11
+```
+
+SQL
+
+```sql
+select a,b
+from(
+    select
+        a,
+        b,
+        abs(a-b) as abs,
+        min(abs(a-b)) over(partition by a) as min_abs,
+    from a 
+    cross join b
+)t
+where abs=min_abs
+```
+
+## 非等值连接--范围匹配
+
+```sql
+SELECT 
+    t1.date_id,
+    t1.p_id,
+    t2.p_value
+FROM table1 t1
+LEFT JOIN table2 t2
+    ON t1.p_id = t2.p_id
+    AND t1.date_id BETWEEN t2.d_start AND t2.d_end
+```
+
+## 时间序列--构造连续日期
+
+```sql
+select 
+	date_add(start_time,pos) as day_time
+from table
+labteral view posexplode(split(space(datediff(end_time,staer_time)),'')) as pos,val
+```
+
+## 时间序列--补全数据
+
+```sql
+select 
+	first_value(a) over(partition by group_id order by date_id asc) as a,
+	date_id
+from(
+    select
+        a,
+        date_id,
+        count(a) over(order by date_id) as group_id
+    from table
+)t
+```
 
 ## reference
 

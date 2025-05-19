@@ -34,17 +34,29 @@ MapReduce 是阶段式、磁盘驱动的粗粒度并行计算；Spark 是内存�
 
 1. 内存和磁盘刷写
 
-   **HIVE 基于磁盘，Spark SQL 使用内存计算作为核心计算机引擎**
+   **HIVE 基于磁盘，Spark SQL 使用内存计算作为核心计算机引擎，极大减少磁盘IO**
 
-   MR的shuffle涉及大量数据传输，网络和磁盘I/O造成负担。数据需要经过环形缓冲区溢写，需要按key进行排序以便键相同的数据可以发送到同一个reduce。
+   MR每个 map 和 reduce 阶段都要落地 → 产生**大量 HDFS IO**。
 
-   Spark的DAG可以减少Shuffle次数。如果计算不涉及其他节点数据交换，Spark可以在内存中一次性完成这些操作，只在最后结果落盘。如果涉及数据交换，Shuffle阶段数据还要写磁盘。(Executor 中有一个 `BlockManager`存储模块：将内存和磁盘共同作为存储设备，多轮迭代计算时，中间结果直接存储到这里。减少IO开销。)
+   - 数据需要经过环形缓冲区溢写，需要按key进行排序以便键相同的数据可以发送到同一个reduce。
+
+   Spark **数据尽可能存在内存中**，避免频繁读写磁盘。
+
+   - Spark的DAG可以减少Shuffle次数。如果计算不涉及其他节点数据交换，Spark可以在内存中一次性完成这些操作，只在最后结果落盘。如果涉及数据交换，Shuffle阶段数据还要写磁盘。
+
+   - (Executor 中有一个 `BlockManager`存储模块：将内存和磁盘共同作为存储设备，多轮迭代计算时，中间结果直接存储到这里。减少IO开销。)
 
 2. 进程和线程
 
    MR基于**进程**级别，每个任务运行在单独的进程。Mapper和Reducer任务执行过程中可能涉及多个线程处理输入数据,执行计算和IO操作
 
    Spark基于**线程**级别，由执行器（Executor）中的线程池处理。每个 Executor 可以运行多个任务，每个任务由一个或多个线程处理，共享 Executor 内的内存。
+
+3. Spark DAG调度
+
+   Spark的DAG可以减少Shuffle次数。如果计算不涉及其他节点数据交换，Spark可以在内存中一次性完成这些操作，只在最后结果落盘。
+
+   MR 一个任务划分成Map和Reduce阶段，一个Task启动独立的JVM执行task
 
 3. Spark Shuffle 优化
 
@@ -145,7 +157,17 @@ GC问题：
 1. **构建运行环境** 
 
    - 用户提交的一个完整 Spark 程序，`spark—submit main.py`
+
+     ```shell
+     --executor-cores
+     --executor-memory
+     --num-executors
+     --driver-cores
+     --drive-rmemory
+     ```
+
    - Driver创建一个Context对象，负责跟资源管理器申请Executor。
+
    - Context注册Executor：**Content向资源管理器注册申请运行Executor进程**，Executor等待task，Executor运行情况随着心跳发送到资源管理器上。
 
 2. **SparkContext构建DAG图(有向无环图)、划分`stage`并分配taskset至Executor**
@@ -175,17 +197,12 @@ GC问题：
 
    ​	`RDD 的血统信息（lineage）` 提供容错能力，任何节点失败可以重新计算
 
-## Spark yarn
+## Spark 部署方式
 
-1. **提交作业（spark-submit）**
-
-2. YARN 启动一个**ApplicationMater**，向Executor申请Container
-
-3. Driver负责 调度任务，收集结果
-
-   ```sql
-   --deploy-mode 选择部署模式
-   ```
+- Local
+- Standalone: Master-Slaver调度集群
+- Yarn：Spark客户端直接连接Yarn。yan-client和yarn-cluster模型
+- Mesos
 
 ## Spark Client vs Cluster 
 
@@ -410,8 +427,9 @@ Bypass SortShuffle
 
 **倾斜现象**
 
-- 任务执行不均：Spark UI 监控各个stage执行时间，查看哪些task的执行时间长于其他task 
-- 内存溢出： Spark作业内存溢出
+- Executor OOM，Shuffle过程出错，执行时间特别久
+- Driver OOM
+- 正常运行的任务突然失败
 
 **数据倾斜原理**
 
@@ -419,7 +437,7 @@ Bypass SortShuffle
 
 **如何定位**
 
-- 定位方法：查看Spark UI中每个Stage的执行情况，查看task的运行时间
+- 定位方法：查看Spark UI中每个Stage的执行情况(某个task执行特别慢；某个task内存溢出)
 - 数据倾斜一般发生在Shuffle过程中，常见的的数据倾斜算子：join，groupByKey，distinct等
 
 **解决方案**
@@ -428,19 +446,24 @@ Bypass SortShuffle
 
 2. 提高Shuffle并行度
 
-   增加 `spark.sql.shuffle.partitions` 或者使用 `repartition()` 方法调整分区数。
+   ```sql
+   set spark.sql.shuffle.partitions
+   repartition(n)
+   ```
 
 3. 两段聚合（仅适合聚合类）
 
-   在执行 `reduceBykey`或 `groupBykey`等聚合操作时，先进行局部聚合，再进行全局聚合
+   - **局部聚合+全局聚合**
 
-   将原本相同的key加上随机前缀做局部聚合，再去掉前缀做全局聚合
+   - 在执行 `reduceBykey`或 `groupBykey`等聚合操作时，先进行局部聚合，再进行全局聚合
+
+   - 将原本相同的key加上随机前缀做局部聚合，再去掉前缀做全局聚合
 
 4. 将Reduce Join转为Map join(大小表)
 
    对RDD进行join的时候，join操作中一个RDD或者表数据量比较小。
 
-   **原理：**普通的join会进行shuffle，将相同的key拉到同一个shuffle read task中再进行join。如果一个RDD比较小，采用广播小RDD全量数据+map算子实现join
+   **原理：**普通的join会进行shuffle，将相同的key拉到同一个shuffle read task中再进行join。如果一个RDD比较小，采用**广播小RDD全量数据+map算子**实现join
 
 5. 采样倾斜key 并拆分join
 
@@ -451,6 +474,12 @@ Bypass SortShuffle
    找到那个造成数据倾斜的RDD/Hive表，给数据标上随机前缀（n以内）。
 
    给另一个RDD的数局扩容n倍，每个数标上1-n的前缀。在进行join
+   
+7. HIVE ETL 预处理数据
+
+   HIVE 预先对数据按照key进行聚合，或者预先和其他表jion
+
+   Spark执行预处理后的表
 
 ## Spark的优化策略
 
@@ -502,7 +531,7 @@ Bypass SortShuffle
 
    Spark加载外部存储系统时导致I/O 性能瓶颈
 
-## 广播变量和累加器
+## Spark共享变量(广播变量/累加器)
 
 **广播变量**
 
@@ -512,7 +541,7 @@ Bypass SortShuffle
 **累加器**
 
 - 作用：Driver端进行全局汇总的计算需求。
-  - Driver端定义且赋初始值给累加器
+  - Driver端定义且赋初始值给累加器.
   - Executor更新，最终在Driver端读取最后的汇总值
 
 ## Spark的持久化&缓存机制
@@ -651,7 +680,7 @@ val rdd3 = rdd1.repartition(8)
 
 **Shuffle优化**
 
-- 分区数、
+- 分区数
 
    `spark.sql.shuffle.partitions`
 

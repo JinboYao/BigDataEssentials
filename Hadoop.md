@@ -125,7 +125,7 @@ HDFS是主从架构
 
 `client`  文件切分；和NAMENODE 交互，获取文件位置；和datanode交互，存储数据
 
-`DATANODE`  本地系统存储文件的块数据
+`DATANODE`  本地系统存储文件的块数据+
 
 ### 写流程
 
@@ -380,13 +380,29 @@ Reduce端`merge`：  Reducer 从多个 Mapper 拉取其对应分区的数据，�
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/blog_migrate/f39beb0b7a0ed71a88faf203f459d507.png)
 
-ResourceManager：整个集群所有资源的管理者。`作用`:处理客户端请求、监控NodeManager、启动或监控ApplicationMaster、资源的分配与调度。
+ResourceManager (Master)
 
-NodeManager：单个节点服务器资源管理者。`作用：`管理单个节点上的资源、处理来自ResourceManager的命令、处理来自ApplicationMaster的命令。
+- 处理客户端请求
+- 资源分配和调度
+- 监控NodeManager，启动和监控ApplicationMaster
 
-ApplicationMaster：单个任务运行的老大，任务在Container内运行客户端提交一个job，就会产生一个ApplicationMaster。`作用：`为应用程序申请资源并分配给内部的任务、任务的监控与容错。
+NodeManager (Slave)
 
-Container：对任务运行环境的抽象，虚拟化技术容器，相当于一台独立的服务器，里面封装了任务运行所需要的资源，如内存、cpu、磁盘、网络等。`好处：`任务运行完直接释放。·
+- 管理单个节点的资源
+
+ApplicationMaster：为程序申请资源，监控任务
+
+Container: 封装一个节点的资源(内存、CPU、磁盘)
+
+### YARN工作流程
+
+- Client向YARN提交作业，ResourceManager分配资源
+
+- ResourceManager分配一个NodeManger上的container，运行ApolicationMaster
+
+- AM向RM申请资源，RM的调取器把资源封装后发送给AM
+
+- AM收到资源后分配给各个NodeManager，执行MapTask和ReduceTask
 
 ### Hadoop中的主要调度器
 
@@ -394,13 +410,13 @@ Container：对任务运行环境的抽象，虚拟化技术容器，相当于�
 
    按照作业提交的顺序来调度作业，适用于作业大小相对一致且不需要多级队列或优先级调度的简单环境。
 
-2. 容量调度器
+2. **容量调度器**
 
    可以将集群的容量分割成多个队列，每个队列有一定的容量保证。
 
    适合多部门或多项目共享集群资源的场景，可以保证资源按需公平分配。
 
-3. 公平调度器
+3. **公平调度器**
 
    以公平的方式分配资源，确保所有运行的作业获得相等的资源
 
@@ -477,6 +493,45 @@ UDTF
     close() 清理
 ```
 
+### HIVE动态分区和静态分区
+
+**动态分区：**Hive根据插入数据的值自动创建所需的分区目录
+
+```sql
+SET hive.exec.dynamic.partition=true;
+SET hive.exec.dynamic.partition.mode=nonstrict;
+```
+
+**静态分区：**用户在插入数据时需要明确指定每个分区的路径和名称
+
+使用：
+
+```
+对于频繁变更分区键值的表，优先考虑动态分区。对于分区键值稳定，数据更新不频繁的情况，可以使用静态分区以提高数据管理的效率。
+```
+
+### 分区表、分桶表、内部表、外部表
+
+分区表：所有文件存储在一个HDFS文件夹里面，根据字段分区（PARTITIONED BY ）。每个分区是一个文件系统的目录
+
+分桶表：按照hash值把数据分散到多个文件（桶）中。（数据加载到桶表时，会对字段取hash值，然后与桶的数量取模。把数据放到对应的文件中。物理上，每个桶就是表(或分区）目录里的一个文件，一个作业产生的桶(输出文件)和reduce任务个数相同。）
+
+内部表：创建表时，会将数据移动到数据仓库指向的路径。
+
+外部表(EXTERNAL_TABLE)：创建表在指定的目录位置，hive存储元数据。(公司大部分情况使用)
+
+### Order By，Sort By，Cluster By，Distrbute By，Group By
+
+Order by 全局排序，在一个reducer里面排序
+
+Sort by 局部有序，对每一个reduce排序
+
+Distrbute by 按照指定的字段对数据进行划分输出到不同的reduce
+
+Cluster by  数据划分到不同reduce中，倒叙排序
+
+Group by  根据字段进行分组聚集。
+
 ### HIVE group by的MR实现
 
 **MAP ** ：将group by的字段组合作为一个key，如果group by单个字段，那么key就一个。将group by之后要进行的聚合操作字段作为value
@@ -531,63 +586,32 @@ Map：维护一个TopN的记录，Key 是需要查看的键，value是需要排�
 
 Reduce：收到所有的局部TopN记录，Reducer 再从这些记录中计算最终的全局 Top N。
 
-### HIVE动态分区和静态分区
-
-**动态分区：**Hive根据插入数据的值自动创建所需的分区目录
-
-```sql
-SET hive.exec.dynamic.partition=true;
-SET hive.exec.dynamic.partition.mode=nonstrict;
-```
-
-**静态分区：**用户在插入数据时需要明确指定每个分区的路径和名称
-
-使用：
-
-```
-对于频繁变更分区键值的表，优先考虑动态分区。对于分区键值稳定，数据更新不频繁的情况，可以使用静态分区以提高数据管理的效率。
-```
-
-### 分区表、分桶表、内部表、外部表
-
-分区表：所有文件存储在一个HDFS文件夹里面，根据字段分区（PARTITIONED BY ）。每个分区是一个文件系统的目录
-
-分桶表：按照hash值把数据分散到多个文件（桶）中。（数据加载到桶表时，会对字段取hash值，然后与桶的数量取模。把数据放到对应的文件中。物理上，每个桶就是表(或分区）目录里的一个文件，一个作业产生的桶(输出文件)和reduce任务个数相同。）
-
-内部表：创建表时，会将数据移动到数据仓库指向的路径
-
-外部表(EXTERNAL_TABLE)：创建表在指定的目录位置，hive存储元数据。
-
-### Order By，Sort By，Cluster By，Distrbute By，Group By
-
-Order by 全局排序，在一个reducer里面排序
-
-Sort by 局部有序，对每一个reduce排序
-
-Distrbute by 按照指定的字段对数据进行划分输出到不同的reduce
-
-Cluster by  数据划分到不同reduce中，倒叙排序
-
-Group by  根据字段进行分组聚集。
-
 ### Fetch抓取和本地模式
 
-- Fetch抓取是指，Hive中对某些情况的查询可以不必使用MapReduce计算。例如：SELECT * FROM employees;在这种情况下，Hive可以简单地读取employee对应的存储目录下的文件，然后输出查询结果到控制台。
+- Fetch抓取是指，Hive中对某些情况的查询可以不必使用MapReduce计算，直接读取存储目录下的文件
+
+  例如：SELECT * FROM employees;在这种情况下，Hive可以简单地读取employee对应的存储目录下的文件，然后输出查询结果到控制台。
 
 - 查询触发执行任务时消耗可能会比实际job的执行时间要多的多，Hive可以通过本地模式在单台机器上处理所有的任务。
 
 ### ☆Hive数据倾斜
 
-**原因：**
+**表现**
 
-1. key值分布不均匀,导致某些reduce需要处理的数据量大，有些处理的数据量小，分布不均匀。可能是mapreduce中某些键值对出现频率非常高。触发**Shuffle**动作，**所有相同key的值就会拉到一个或几个节点上，就容易发生单个节点处理数据量爆增的情况。**
-2. 业务数据本身分布不均
-3. 建表时考虑不周，
-4. 某些SQL语句倾斜，笛卡尔积或者小文件过多
+***HIVE***
 
-**定位：** 任务执行过程中 卡在99%
+- Reduce卡在99%，一直不结束
+- container报错OOM
+- 某些Reduce任务读写的数据量极大，远超过其他的Reducer
+- 某些任务被kill
 
-**解决方法：**
+***Spark***
+
+- Executor OOM，Shuffle过程出错，执行时间特别久
+- Driver OOM
+- 正常运行的任务突然失败
+
+**解决方法**
 
 **SQL语句调节**
 
@@ -643,46 +667,43 @@ Group by  根据字段进行分组聚集。
 
 第二个MR Job（最终聚合）再根据预处理的数据结果按照Group By Key 分布到 Reduce 中（这个过程可以保证相同的 Group By Key 被分布到同一个Reduce中），最后完成最终的聚合操作。
 
-### SQL运行很慢的原因
-
-1、数据倾斜
-
-2、MR作业开销高
-
-```
-Hive底层依赖MapReduce来执行查询。当查询较复杂时，生成的MapReduce任务数量会很多，而MapReduce的启动和任务调度存在较高的开销，尤其是在小规模数据集上的查询，也会影响执行速度。
-```
-
-3、未使用分区
-
-4、未使用合适的分桶
-
-```
-分桶可以将数据按照某个字段进一步细分，提高JOIN和GROUP BY操作的效率。如果查询涉及的字段没有进行分桶设计，查询时可能会需要对全表数据进行扫描。
-
-```
-
-5、小文件占用开销
-
-6、未使用合适的文件格式
-
-```
-Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合的文件格式（如TextFile）会增加I/O开销，导致查询变慢。使用ORC或Parquet等压缩格式，可以大幅减少存储空间并提高查询性能。
-```
-
-### ☆HIVE 调优
+### ☆HIVE 优化
 
 **表设计优化**
 
-- 分区  常用过滤字段做分区
-- 分桶  JOIN/Group by多的字段，支持bucket map join
-- 存储格式 ORC/Parquet 优于txt
-- 小文件 控制小文件（输入前手动合并小文件）
+- 分区存储
+
+  ```sql
+  partition BY( dt 'String')
+  ```
+
+- 列式存储：存储格式 ORC/Parquet 优于txt
+
+- 压缩
+
+  ```sql
+  -- Map和Reduce 中间结果压缩传输
+  SET mapreduce.map.output.compress = true;
+  SET mapreduce.map.output.compress.codec = org.apache.hadoop.io.compress.SnappyCodec;
+  -- 建表时压缩
+  CREATE TABLE sales (
+    id INT,
+  )
+  STORED AS ORC
+  TBLPROPERTIES ("orc.compress"="SNAPPY");
+  ```
+
+- map端combiner
+
+  ```sql
+  set hive.map.aggr=true
+  ```
 
 **SQL优化**
 
-- 分区裁剪和列裁剪：减少数据范围
-- 大小表关联：map join
+- 行列过滤：分区裁剪和列裁剪，减少数据范围
+- Map Join
+
 - 大表关联：设计分桶策略，避免数据倾斜
 - 关联条件统一：字段类型统一，尽量减少笛卡尔积
 - group by 代替dinstinct
@@ -692,27 +713,104 @@ Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合�
 
 **作业执行层优化**
 
-- 合理设置Map/Reduce个数
+- 合理设置Map
 
-  `set mapreduce.job.reduces=200;`
+  ```sql
+  set mapreduce.input.fileinputformat.split.minsize -- split最小size
+  set mapreduce.input.fileinputformat.split.maxsize -- split最大size
+  ```
+
+- 合理设置Reduce
+
+  ````sql
+  set mapreduce.job.reduces=200
+  ````
 
 - 小文件合并
 
-  `set hive.merge.mapfiles=true;`
+  ```sql
+  SET hive.merge.mapfiles = true;					-- 合并 map-only 任务产生的小文件
+  SET hive.merge.mapredfiles = true;				-- 合并 map+reduce 任务产生的小文件
+  SET hive.merge.smallfiles.avgsize = 128000000;  -- 小于这个平均大小就尝试合并
+  SET hive.merge.size.per.task = 256000000;       -- 每个 task 合并的目标大小
+  ```
 
 - 动态分区
 
+  ```sql
+  SET hive.exec.dynamic.partition.mode=nonstrict   -- 非严格模式
+  SET hive.exec.dynamic.partition = true;          -- 动态分区
   ```
-  hive.exec.dynamic.partition.mode
-  ```
+  
+- JVM重用
 
-   `nonstrict` 支持动态分区
+  ```sql
+  SET mapreduce.job.jvm.numtasks = 5; -- 设置 map task JVM 可重用次数（例如复用 5 次）
+  ```
 
 **数据倾斜处理**
 
 - 随机前缀
 - Map Join
 - 热点数据单独运行
+
+### SQL运行很慢的原因
+
+数据倾斜
+
+小文件占用开销
+
+```markdown
+**原因:**
+数据源上传时包含很多小文件
+reduce数量越多，包含的小文件就越多。（每个 Reduce 任务一个输出文件）
+
+**HDFS小文件弊端**
+1. 小文件启动多个map，一个map需要开启一个jvm
+2. HDFS上每个文件都要在NameNode上建立一个索引，索引大小大约150byte.当小文件多的时候，就会产生很多的索引文件，一方面会大量占用namenode的内存空间，另一方面就是索引文件过大使的索引速度变慢
+
+**解决方案**
+
+（1）Hadoop Archive
+    是一个高效地将小文件放入HDFS块中的文件存档工具，它能够将多个小文件打包成一个HAR文件，这样在减少namenode内存使用的同时。
+（2）Sequence file
+    sequence file由一系列的二进制key/value组成，如果为key小文件名，value为文件内容，则可以将大批小文件合并成一个大文件。
+（3） `setNumReduceTasks()`合理设置Reduce数量
+（4）CombineFileInputFormat
+    CombineFileInputFormat是一种新的inputformat，用于将多个文件合并成一个单独的split，另外，它会考虑数据的存储位置
+```
+
+MR作业开销高
+
+```markdown
+1）硬件资源限制
+- **磁盘I/O速度**
+- **网络带宽**：在shuffle阶段需要较高的带宽
+- **内存资源**
+
+2）计算过程瓶颈
+1. **数据倾斜** 数据分布不均匀，数据倾斜导致某个Reducer运行时间长
+2. **小文件过多**  每个文件都需要启动一个Map，大量小文件导致很大map启动和文件读取开销
+3. **Map和reduce数设置不合理**  Map数设置过小，单个节点资源未能充分利用，任务失败风险更大；Map数设置过大，资源碎片化，启动JVM进程的开销大
+4. **大量的不可分块的超大文件** 会导致单个Map需要计算的数据量变大，运行时间变长
+5. **spill次数过多** 频繁spill增加IO开销
+6. **merge次数过多** shuffle阶段需要merge，频繁merge增加CPU、IO负担
+7. **Map设置的运行时间太长，Reduce等待过久**  Reduce任务在开始处理之前需要等待所有Map任务完成
+```
+
+未使用分区
+
+未使用合适的分桶
+
+```
+分桶可以将数据按照某个字段进一步细分，提高JOIN和GROUP BY操作的效率。如果查询涉及的字段没有进行分桶设计，查询时可能会需要对全表数据进行扫描。
+```
+
+未使用合适的文件格式
+
+```
+Hive支持多种文件格式，如TextFile、ORC、Parquet等。使用不适合的文件格式（如TextFile）会增加I/O开销，导致查询变慢。使用ORC或Parquet等压缩格式，可以大幅减少存储空间并提高查询性能。
+```
 
 ## 手撕MapReduce程序
 

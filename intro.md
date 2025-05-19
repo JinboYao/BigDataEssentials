@@ -71,11 +71,9 @@ Education data system construction.(My colleagues and )I completed the construct
 
 职业路线：数据开发工程师，组件\业务
 
-->某个数据主题的开发负责人，更高更全面的技术，更深刻的业务理解，更强的软实力（沟通管理艺术）
+->某个数据业务的开发负责人，更高更全面的技术，更深刻的业务理解，更强的软实力（沟通管理艺术）
 
 ->技术负责人（technical leader）
-
-->架构师（Architect）
 
 ```sql
 The first step is to get a data development job
@@ -98,3 +96,19 @@ She is very capable, not only in terms of technical skills but also in terms of 
 2、How long will I to get results?
 3、I would like to know the pattern of interns, such as study plans, conversion rate to full-time positions.
 ```
+
+
+
+### ant的工作
+
+数据迁移：印尼DANA的风控数据从金融云
+
+dataphin/deepinsight 测试，编写测试报告，总结汇报
+
+
+
+### ANT带来的成长
+
+- 数据集成，UDF开发等一些比较新颖的技术
+- 更加规范的开发。
+- 学习文档：包括设计规范，

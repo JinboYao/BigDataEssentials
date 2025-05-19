@@ -1430,6 +1430,29 @@ from(
 )t
 ```
 
+所有科目成绩都大于某一学科平均成绩的学生
+
+```sql
+with avg as( 
+    select subject,avg(score) as avg
+    from table
+    group by subject
+)
+
+select uid,
+	sum(flag) as avg,
+	count(uid) as cnt
+from(
+    select if(a.score-b.avg>1,1,0) as flag,a.*
+    from table a
+    left join avg b on a.subject=b.subject
+)t
+group by uid
+having sum(flag)=count(uid)
+```
+
+
+
 ## reference
 
 https://www.dwsql.com/basic/consecutive
@@ -1512,3 +1535,16 @@ lead（）获取下一行数据
 ```
 
 ##### 
+
+
+
+```sql
+select *
+from table a
+join table b on a.bar_id=b.bar_id
+where t1.user_id<t2.user_id
+and (abs(a.login_time,b.login_time)<=600 or abs(a.logoff_time,b.logoff_time)<=600)
+```
+
+
+
